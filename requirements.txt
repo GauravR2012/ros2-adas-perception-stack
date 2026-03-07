@@ -1,0 +1,8 @@
+numpy
+scipy
+opencv-python
+scikit-learn
+nuscenes-devkit
+matplotlib
+tqdm
+pyyaml
