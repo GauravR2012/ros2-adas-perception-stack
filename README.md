@@ -1,8 +1,15 @@
 # ROS2 ADAS Perception and Tracking Stack
 
-A modular **ROS2-based ADAS perception pipeline** built using the **nuScenes dataset**, implementing LiDAR-based object detection, multi-object tracking, velocity estimation, and Time-To-Collision (TTC) computation.
+A **modular ROS2-based ADAS perception stack** built on the **nuScenes dataset**, implementing **LiDAR object detection, multi-object tracking, ego-relative velocity estimation, and Time-To-Collision (TTC) reasoning**.
 
-The project is designed as a **modular perception stack**, allowing easy replacement of detectors (ground truth, clustering, or learned models like PointPillars and CenterPoint).
+The stack is designed with a **detector-agnostic architecture**, enabling seamless replacement of the perception frontend with:
+
+* Ground-truth detections
+* Classical LiDAR clustering
+* Learned 3D detectors (**PointPillars**, **CenterPoint**)
+* Future multi-sensor fusion modules
+
+This project is structured as a **mini autonomy perception pipeline**, bridging **raw LiDAR sensing → object tracking → collision risk reasoning → downstream planning hooks**.
 
 ---
 
@@ -10,196 +17,266 @@ The project is designed as a **modular perception stack**, allowing easy replace
 
 ![ADAS Demo](demo1.gif)
 
-## System Overview
+---
 
-Pipeline:
+## 🚗 System Pipeline
 
-nuScenes → Detector → Tracker → Velocity Estimation → TTC → Collision Risk
+```text
+nuScenes → Detection → Data Association → Multi-Object Tracking
+         → Velocity Estimation → Time-To-Collision → Collision Risk
+```
 
-Modules implemented as ROS2 nodes.
+Each stage is implemented as an independent **ROS2 node**, making the system highly modular and extensible.
 
 ---
 
-## Features
+## ✨ Core Features
 
-• ROS2-based modular perception pipeline  
-• LiDAR point cloud processing  
-• Ground-truth and clustering-based object detection  
-• Multi-object tracking using Kalman Filter  
-• Hungarian algorithm for data association  
-• Ego-relative velocity estimation  
-• Time-To-Collision (TTC) computation  
-• RViz visualization of tracked objects, velocities, and TTC  
-• Detector modularity for PointPillars and CenterPoint integration  
-
----
-
-## Architecture
-
-Nodes in the system:
-
-nuscenes_player
-→ publishes camera images, LiDAR, GT detections, TF
-
-lidar_cluster_detector
-→ DBSCAN clustering on LiDAR point clouds
-
-gt_tracker_node
-→ multi-object tracking + velocity + TTC
-
-lidar_detection_visualizer
-→ RViz visualization
-
-
-Detector modules (modular interface):
-
-
-Ground Truth Detector
-LiDAR Cluster Detector
-PointPillars Detector (planned)
-CenterPoint Detector (planned)
-
+* **ROS2 modular perception pipeline**
+* **nuScenes dataset playback node**
+* **LiDAR point cloud processing**
+* **Ground-truth and DBSCAN-based object detection**
+* **Kalman Filter-based multi-object tracking**
+* **Hungarian algorithm for data association**
+* **Per-object velocity estimation**
+* **Ego-relative kinematic reasoning**
+* **Time-To-Collision (TTC) computation**
+* **RViz visualization of tracks, velocities, and TTC**
+* **Plug-and-play detector backend design**
+* Planned integration for **PointPillars** and **CenterPoint**
 
 ---
 
-## Repository Structure
+## 🧠 System Architecture
 
+### Active ROS2 Nodes
 
-ros2-adas-perception-stack
+### `nuscenes_player`
+
+Publishes:
+
+* LiDAR point clouds
+* camera images
+* ground-truth 3D detections
+* ego pose and TF tree
+
+### `lidar_cluster_detector`
+
+Performs:
+
+* point cloud preprocessing
+* DBSCAN clustering
+* centroid extraction
+* bounding box estimation
+
+### `gt_tracker_node`
+
+Core perception intelligence node responsible for:
+
+* track initialization
+* Kalman Filter state updates
+* Hungarian data association
+* track velocity estimation
+* TTC computation
+* collision risk scoring hooks
+
+### `lidar_detection_visualizer`
+
+Publishes RViz markers for:
+
+* 3D tracked boxes
+* velocity arrows
+* object IDs
+* TTC labels
+* collision warnings
+
+---
+
+## 🧩 Detector Abstraction Layer
+
+The perception frontend follows a **detector-agnostic interface**, enabling rapid swapping between classical and learned detectors.
+
+### Implemented
+
+* Ground Truth Detector
+* LiDAR Cluster Detector
+
+### Planned
+
+* PointPillars 3D Detector
+* CenterPoint 3D Detector
+* Camera-LiDAR Fusion Detector
+
+This makes the stack highly suitable for **ADAS perception benchmarking**.
+
+---
+
+## 📂 Repository Structure
+
+```text
+ros2-adas-perception-stack/
 │
-├── src/av_fusion
-│ ├── gt_tracker_node.py
-│ ├── nuscenes_player.py
-│ ├── lidar_cluster_detector.py
-│ ├── lidar_detection_visualizer.py
-│ ├── pointpillars_detector_node.py
-│ └── centerpoint_detector_node.py
+├── src/
+│   └── av_fusion/
+│       ├── nuscenes_player.py
+│       ├── lidar_cluster_detector.py
+│       ├── gt_tracker_node.py
+│       ├── lidar_detection_visualizer.py
+│       ├── pointpillars_detector_node.py
+│       └── centerpoint_detector_node.py
 │
+├── launch/
+├── configs/
 ├── package.xml
 ├── setup.py
-├── README.md
-└── requirements.txt
-
+├── requirements.txt
+└── README.md
+```
 
 ---
 
-## Dataset
+## 📦 Dataset Setup
 
 This project uses the **nuScenes dataset**.
 
-Download:
+Recommended for development:
 
+* **nuScenes-mini**
+
+Download from:
 https://www.nuscenes.org/download
 
-Recommended version for testing:
+Expected dataset location:
 
-
-nuScenes-mini
-
-
-Place the dataset in:
-
-
+```bash
 ~/av_perception/data/nuscenes
-
+```
 
 ---
 
-## Installation
+## ⚙️ Installation
 
-### 1. Clone repository
+### Clone repository
 
-
+```bash
 git clone https://github.com/GauravR2012/ros2-adas-perception-stack.git
+cd ros2-adas-perception-stack
+```
 
+### Install dependencies
 
-### 2. Install dependencies
-
-
+```bash
 pip install -r requirements.txt
+```
 
+### Build workspace
 
-### 3. Build ROS2 workspace
-
-
+```bash
 colcon build
+```
 
+### Source workspace
 
-### 4. Source workspace
-
-
+```bash
 source install/setup.bash
-
+```
 
 ---
 
-## Running the Pipeline
+## ▶️ Running the Full Pipeline
 
-### Start nuScenes player
+### 1) Start nuScenes playback
 
-
+```bash
 ros2 run av_fusion nuscenes_player
+```
 
+### 2) Start detector (optional clustering mode)
 
-### Start tracker
+```bash
+ros2 run av_fusion lidar_cluster_detector
+```
 
+### 3) Start tracker + TTC node
 
+```bash
 ros2 run av_fusion gt_tracker
+```
 
+### 4) Start RViz visualizer
 
-### Start visualization
-
-
+```bash
 ros2 run av_fusion lidar_detection_visualizer
+```
 
+### 5) Launch RViz
 
-### Open RViz
-
-
+```bash
 rviz2
-
-
----
-
-## Visualization
-
-The system visualizes:
-
-• LiDAR point clouds  
-• Ground truth objects (green boxes)  
-• Tracked objects (red boxes)  
-• Velocity vectors (blue arrows)  
-• Time-To-Collision labels  
+```
 
 ---
 
-## Future Work
+## 📊 Visualization Outputs
 
-Planned improvements:
+The RViz pipeline visualizes:
 
-• Sensor fusion (camera + LiDAR)  
-• Collision risk classification  
-• Motion prediction  
-• Planning and control integration  
+* LiDAR point clouds
+* detected objects
+* tracked trajectories
+* unique track IDs
+* velocity vectors
+* TTC text overlays
+* collision risk indicators
 
----
-
-## Technologies Used
-
-• ROS2  
-• Python  
-• nuScenes dataset  
-• NumPy  
-• SciPy  
-• OpenCV  
-• scikit-learn  
-• RViz  
+This enables **end-to-end perception debugging and ADAS scenario analysis**.
 
 ---
 
-## Author
+## 📈 Engineering Highlights
 
-Gaurav Ramteke
+This repository demonstrates:
 
-Robotics / Autonomous Systems Enthusiast
+* **ROS2 middleware engineering**
+* **real-time perception pipeline design**
+* **tracking-by-detection systems**
+* **kinematic state estimation**
+* **ADAS collision reasoning**
+* **modular detector abstraction**
+* **downstream autonomy stack integration readiness**
 
+---
+
+## 🔮 Roadmap / Future Work
+
+* Camera + LiDAR sensor fusion
+* Learned 3D detector integration
+* trajectory prediction
+* lane-aware risk reasoning
+* collision risk classification
+* planner and control integration
+* CARLA closed-loop simulation
+* autonomous emergency braking prototype
+
+---
+
+## 🛠️ Technologies
+
+* ROS2
+* Python
+* nuScenes
+* NumPy
+* SciPy
+* OpenCV
+* scikit-learn
+* RViz
+* Kalman Filtering
+* Hungarian Matching
+* DBSCAN
+
+---
+
+## 👨‍💻 Author
+
+**Gaurav Ramteke**
+Robotics | ADAS Perception | Autonomous Systems
