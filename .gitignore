@@ -1,0 +1,72 @@
+# =========================
+# Python
+# =========================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+
+# =========================
+# Virtual environments
+# =========================
+venv/
+.venv/
+env/
+
+# =========================
+# VS Code / IDE
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# =========================
+# ROS2 build artifacts
+# =========================
+build/
+install/
+log/
+
+# =========================
+# Model weights / inference engines
+# =========================
+*.pt
+*.pth
+*.onnx
+*.engine
+*.trt
+*.weights
+
+# =========================
+# Datasets / recordings
+# =========================
+*.bag
+*.db
+*.sqlite
+*.sqlite3
+*.pkl
+*.npz
+*.npy
+*.csv
+
+# =========================
+# Temporary / output files
+# =========================
+*.tmp
+*.temp
+*.cache
+*.log
+*.out
+
+# =========================
+# OS files
+# =========================
+.DS_Store
+Thumbs.db
+desktop.ini
