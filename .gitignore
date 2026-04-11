@@ -5,3 +5,6 @@ log/
 *.pdf
 .vscode/
 *.rviz
+frames_*.gv
+frames_*.pdf
+track.rviz
