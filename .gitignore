@@ -8,3 +8,4 @@ log/
 frames_*.gv
 frames_*.pdf
 track.rviz
+.vscode/
