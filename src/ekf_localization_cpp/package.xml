@@ -2,21 +2,38 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>ekf_localization_cpp</name>
-  <version>0.0.0</version>
-  <description>TODO: Package description</description>
-  <maintainer email="gaurav.ramteke2012@gmail.com">adarsh</maintainer>
-  <license>TODO: License declaration</license>
+  <version>0.2.0</version>
+  <description>
+    EKF-based localization node for ROS 2.
+    Fuses odometry, IMU yaw-rate, and pose measurements into a filtered
+    /ekf/odom output. Includes TF broadcast, RViz trajectory marker,
+    NIS monitoring, and a mock sensor publisher for offline testing.
+  </description>
+
+  <maintainer email="you@example.com">Your Name</maintainer>
+  <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
+  <!-- Core ROS 2 -->
   <depend>rclcpp</depend>
   <depend>nav_msgs</depend>
   <depend>sensor_msgs</depend>
-  <depend>tf2_ros</depend>
-  <depend>Eigen3</depend>
+  <depend>geometry_msgs</depend>
 
+  <!-- NEW: visualization and TF -->
+  <depend>visualization_msgs</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2</depend>
+
+  <!-- Eigen (header-only, pulled via cmake) -->
+  <depend>eigen3_cmake_module</depend>
+
+  <!-- Linting -->
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
+
+  <depend>tf2_geometry_msgs</depend>
 
   <export>
     <build_type>ament_cmake</build_type>

@@ -1,0 +1,9 @@
+ekf_localization_cpp:
+  ros__parameters:
+    q_xy:   0.0002
+    q_yaw:  0.00002
+    q_vel:  0.002
+    r_pose: 0.04
+    r_vel:  0.0025
+
+
