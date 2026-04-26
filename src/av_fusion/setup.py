@@ -36,6 +36,7 @@ setup(
             'camera_detector = av_fusion.camera_detector_node:main',
             'kitti_player = av_fusion.kitti_player:main',
             'collision_estimator = av_fusion.collision_estimator:main',
+            'nuscenes_bridge = av_fusion.nuscenes_bridge:main',
         ],
     },
 )
