@@ -1,2 +1,7 @@
 .vscode/
-*.db
+__pycache__/
+*.pyc
+build/
+install/
+log/
+*.vc.db
