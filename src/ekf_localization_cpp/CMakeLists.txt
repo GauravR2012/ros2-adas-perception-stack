@@ -95,7 +95,11 @@ add_executable(slam_pose_bridge src/slam_pose_bridge.cpp)
 ament_target_dependencies(slam_pose_bridge
   rclcpp geometry_msgs tf2_ros tf2_geometry_msgs)
 
-install(TARGETS slam_pose_bridge
+add_executable(fake_laser fake_laser.cpp)
+ament_target_dependencies(fake_laser
+  rclcpp sensor_msgs)
+
+install(TARGETS slam_pose_bridge fake_laser
   DESTINATION lib/${PROJECT_NAME})
 
 ament_package()

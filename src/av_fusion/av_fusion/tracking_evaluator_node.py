@@ -1,9 +1,7 @@
 import rclpy
 from rclpy.node import Node
-
 from vision_msgs.msg import Detection3DArray
 from visualization_msgs.msg import MarkerArray
-
 import numpy as np
 
 
@@ -21,7 +19,7 @@ class TrackingEvaluator(Node):
 
         self.trk_sub = self.create_subscription(
             MarkerArray,
-            "/lidar/detection_markers",
+            "/tracking/markers",
             self.trk_callback,
             10
         )
@@ -51,7 +49,7 @@ class TrackingEvaluator(Node):
         self.trk_data = [
             [m.pose.position.x, m.pose.position.y]
             for m in msg.markers
-            if m.ns == "tracked"
+            if m.ns == "tracks"
         ]
 
         self.evaluate()

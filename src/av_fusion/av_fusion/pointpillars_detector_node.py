@@ -2,12 +2,10 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import PointCloud2
 from vision_msgs.msg import Detection3DArray, Detection3D, BoundingBox3D
-
 from sensor_msgs_py import point_cloud2
 import numpy as np
-
+import torch
 from mmdet3d.apis import init_model, inference_detector
-
 
 CONFIG = "configs/pointpillars_config.py"
 CHECKPOINT = "checkpoints/pointpillars.pth"
@@ -27,24 +25,25 @@ class PointPillarsDetector(Node):
 
         self.publisher = self.create_publisher(
             Detection3DArray,
-            "/detections/3d_boxes",
+            "/detections/boxes_3d",
             10
         )
 
-        self.model = init_model(CONFIG, CHECKPOINT, device="cuda")
+        # Dynamic device selection for CPU-only systems
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.model = init_model(CONFIG, CHECKPOINT, device=device)
 
-        self.get_logger().info("PointPillars Detector Started")
+        self.get_logger().info(f"PointPillars Detector Started on device: {device}")
 
     def lidar_callback(self, msg):
-
         points = []
 
+        # Read intensity along with x, y, z for point pillars
         for p in point_cloud2.read_points(
                 msg,
-                field_names=("x", "y", "z"),
+                field_names=("x", "y", "z", "intensity"),
                 skip_nans=True):
-
-            points.append([p[0], p[1], p[2]])
+            points.append([p[0], p[1], p[2], p[3]])
 
         points = np.array(points)
 
@@ -56,9 +55,7 @@ class PointPillarsDetector(Node):
         boxes = result.pred_instances_3d.bboxes_3d
 
         for box in boxes:
-
             det = Detection3D()
-
             bbox = BoundingBox3D()
 
             center = box.center.numpy()

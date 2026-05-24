@@ -141,16 +141,42 @@ class LidarClusterDetector(Node):
 
 
         # ==========================================================
-
-        # 🔹 GROUND REMOVAL (RELAXED)
-
+        # 🔹 GROUND REMOVAL (RANSAC PLANE FITTING)
         # ==========================================================
+        if len(points) > 50:
+            max_inliers = 0
+            best_plane = None
+            num_iterations = 40
+            threshold = 0.25  # distance threshold to plane (meters)
 
+            for _ in range(num_iterations):
+                idx = np.random.choice(len(points), 3, replace=False)
+                p1, p2, p3 = points[idx]
 
+                normal = np.cross(p2 - p1, p3 - p1)
+                norm = np.linalg.norm(normal)
+                if norm < 1e-4:
+                    continue
+                normal = normal / norm
+                d = -np.dot(normal, p1)
 
-        points = points[points[:, 2] > -2.5]
+                # Distance of all points to plane
+                distances = np.abs(np.dot(points, normal) + d)
+                inliers = np.where(distances < threshold)[0]
 
+                if len(inliers) > max_inliers:
+                    max_inliers = len(inliers)
+                    best_plane = (normal, d, inliers)
 
+            if max_inliers > 0:
+                normal, d, inliers = best_plane
+                # A valid ground plane has a mostly vertical normal vector (tilt < ~45 deg)
+                if abs(normal[2]) > 0.7:
+                    mask_ground = np.zeros(len(points), dtype=bool)
+                    mask_ground[inliers] = True
+                    # Only remove ground points that are actually in the lower half of the vehicle (z < -0.5)
+                    mask_ground = mask_ground & (points[:, 2] < -0.5)
+                    points = points[~mask_ground]
 
         self.get_logger().info(f"After ground removal: {len(points)}")
 

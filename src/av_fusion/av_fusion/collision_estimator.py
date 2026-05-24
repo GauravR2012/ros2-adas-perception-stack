@@ -1,9 +1,9 @@
 import rclpy
 from rclpy.node import Node
 from vision_msgs.msg import Detection3DArray
+from nav_msgs.msg import Odometry
 from visualization_msgs.msg import Marker, MarkerArray
 from geometry_msgs.msg import Point
-import time
 import math
 
 
@@ -13,8 +13,15 @@ class CollisionEstimator(Node):
 
         self.sub = self.create_subscription(
             Detection3DArray,
-            "/detections/boxes_3d",
+            "/tracked_objects",
             self.callback,
+            10
+        )
+
+        self.odom_sub = self.create_subscription(
+            Odometry,
+            "/ekf/odom",
+            self.odom_callback,
             10
         )
 
@@ -24,96 +31,90 @@ class CollisionEstimator(Node):
             10
         )
 
-        # -----------------------------
-        # tracking memory
-        # -----------------------------
-        self.prev_tracks = {}
-        self.next_id = 0
-        self.prev_time = None
+        # Ego state memory
+        self.ego_pose = {"x": 0.0, "y": 0.0, "yaw": 0.0}
+        self.ego_vx = 0.0
 
-        # -----------------------------
-        # kalman-style smoothing
-        # -----------------------------
-        self.alpha = 0.75   # keep earlier preference: stable smoothing
-
-        # -----------------------------
         # metrics
-        # -----------------------------
         self.total_frames = 0
         self.total_objects = 0
         self.brake_events = 0
         self.min_ttc_seen = 9999.0
 
-        self.get_logger().info("🚗 Collision Estimator + Tracking + Metrics Started")
+        self.get_logger().info("🚗 Collision Estimator Started (Centralized Tracker + EKF Odom)")
 
-    # ==========================================================
-    # nearest-neighbor tracker
-    # ==========================================================
-    def assign_id(self, x, y):
-        best_id = None
-        best_dist = 9999
+    def odom_callback(self, msg):
+        self.ego_vx = msg.twist.twist.linear.x
+        
+        # Quaternion to Yaw
+        q = msg.pose.pose.orientation
+        siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
+        cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+        yaw = math.atan2(siny_cosp, cosy_cosp)
+        
+        self.ego_pose = {
+            "x": msg.pose.pose.position.x,
+            "y": msg.pose.pose.position.y,
+            "yaw": yaw
+        }
 
-        for obj_id, track in self.prev_tracks.items():
-            dist = math.sqrt((x - track["x"]) ** 2 + (y - track["y"]) ** 2)
-            if dist < best_dist and dist < 2.5:
-                best_dist = dist
-                best_id = obj_id
-
-        if best_id is None:
-            best_id = self.next_id
-            self.next_id += 1
-
-        return best_id
-
-    # ==========================================================
-    # main callback
-    # ==========================================================
     def callback(self, msg):
-        current_time = time.time()
-
-        if self.prev_time is None:
-            self.prev_time = current_time
-            return
-
-        dt = current_time - self.prev_time
-        dt = max(dt, 0.05)
-
         self.total_frames += 1
         self.total_objects += len(msg.detections)
 
         marker_array = MarkerArray()
-        new_tracks = {}
 
         brake_triggered = False
         frame_min_ttc = 9999.0
 
+        ego_x = self.ego_pose["x"]
+        ego_y = self.ego_pose["y"]
+        ego_yaw = self.ego_pose["yaw"]
+        ego_vx = self.ego_vx
+
+        is_map_frame = (msg.header.frame_id == "map")
+
         for det in msg.detections:
-            x = det.bbox.center.position.x
-            y = det.bbox.center.position.y
-            z = det.bbox.center.position.z
+            ox = det.bbox.center.position.x
+            oy = det.bbox.center.position.y
+            oz = det.bbox.center.position.z
 
-            obj_id = self.assign_id(x, y)
+            # Extract Tracking ID and Velocity
+            if len(det.results) > 0:
+                obj_id = int(det.results[0].hypothesis.class_id)
+                ovx = det.results[0].pose.pose.position.x
+                ovy = det.results[0].pose.pose.position.y
+            else:
+                obj_id = 999
+                ovx = 0.0
+                ovy = 0.0
 
-            prev = self.prev_tracks.get(
-                obj_id,
-                {"x": x, "y": y, "vx": 0.0, "vy": 0.0}
-            )
+            # Transform absolute map coordinates to ego relative base_link frame
+            if is_map_frame:
+                dx = ox - ego_x
+                dy = oy - ego_y
+                x = dx * math.cos(ego_yaw) + dy * math.sin(ego_yaw)
+                y = -dx * math.sin(ego_yaw) + dy * math.cos(ego_yaw)
 
-            raw_vx = (x - prev["x"]) / dt
-            raw_vy = (y - prev["y"]) / dt
+                # Absolute velocity rotated to base_link
+                vx_base = ovx * math.cos(ego_yaw) + ovy * math.sin(ego_yaw)
+                vy_base = -ovx * math.sin(ego_yaw) + ovy * math.cos(ego_yaw)
 
-            # =====================================
-            # Kalman-style EMA smoothing
-            # =====================================
-            vx = self.alpha * prev["vx"] + (1 - self.alpha) * raw_vx
-            vy = self.alpha * prev["vy"] + (1 - self.alpha) * raw_vy
-
-            speed = math.sqrt(vx * vx + vy * vy)
+                # True relative velocity by subtracting EKF forward velocity
+                rel_vx = vx_base - ego_vx
+                rel_vy = vy_base
+            else:
+                # Already in sensor/ego relative frame
+                x = ox
+                y = oy
+                rel_vx = ovx
+                rel_vy = ovy
 
             distance = math.sqrt(x * x + y * y)
 
-            # use forward relative speed
-            rel_speed = -vx
+            # Radial relative velocity: dot(pos, rel_vel) / |pos|
+            # Approaches: rel_speed > 0
+            rel_speed = - (x * rel_vx + y * rel_vy) / (distance + 1e-6)
 
             if rel_speed > 0.1:
                 ttc = distance / rel_speed
@@ -123,23 +124,11 @@ class CollisionEstimator(Node):
             frame_min_ttc = min(frame_min_ttc, ttc)
             self.min_ttc_seen = min(self.min_ttc_seen, ttc)
 
-            # =====================================
-            # danger logic
-            # =====================================
+            # Danger logic (object inside ego path and approaching fast)
             danger = ttc < 2.0 and x > 0 and abs(y) < 4.0
 
             if danger:
                 brake_triggered = True
-
-            # =====================================
-            # save track
-            # =====================================
-            new_tracks[obj_id] = {
-                "x": x,
-                "y": y,
-                "vx": vx,
-                "vy": vy
-            }
 
             # =====================================
             # TEXT MARKER
@@ -151,12 +140,21 @@ class CollisionEstimator(Node):
             text.type = Marker.TEXT_VIEW_FACING
             text.action = Marker.ADD
 
+            # Keep text marker relative to base_link if we did the transform,
+            # or in the incoming sensor frame otherwise.
             text.pose.position.x = x
             text.pose.position.y = y
-            text.pose.position.z = z + 2.0
+            text.pose.position.z = oz + 2.0
+
+            # Override frame to base_link if we transformed to base_link
+            if is_map_frame:
+                text.header.frame_id = "base_link"
 
             text.scale.z = 0.6
             text.color.a = 1.0
+
+            text.lifetime.sec = 0
+            text.lifetime.nanosec = 600000000
 
             if danger:
                 text.color.r = 1.0
@@ -181,19 +179,26 @@ class CollisionEstimator(Node):
             arrow.type = Marker.ARROW
             arrow.action = Marker.ADD
 
-            display_vx = max(min(vx, 3.0), -3.0)
-            display_vy = max(min(vy, 3.0), -3.0)
+            arrow.lifetime.sec = 0
+            arrow.lifetime.nanosec = 600000000
+
+            if is_map_frame:
+                arrow.header.frame_id = "base_link"
 
             p1 = Point()
             p2 = Point()
 
             p1.x = x
             p1.y = y
-            p1.z = z + 1.0
+            p1.z = oz + 1.0
 
+            # Display arrow for object absolute velocity in ego frame (not relative)
+            display_vx = vx_base if is_map_frame else rel_vx
+            display_vy = vy_base if is_map_frame else rel_vy
+            
             p2.x = x + display_vx * 0.8
             p2.y = y + display_vy * 0.8
-            p2.z = z + 1.0
+            p2.z = oz + 1.0
 
             arrow.points = [p1, p2]
 
@@ -231,9 +236,6 @@ class CollisionEstimator(Node):
         )
 
         self.marker_pub.publish(marker_array)
-
-        self.prev_tracks = new_tracks
-        self.prev_time = current_time
 
 
 def main():

@@ -14,6 +14,7 @@ EKFNode::EKFNode()
     declare_parameter("q_yaw",  0.00002);
     declare_parameter("q_vel",  0.002);
     declare_parameter("r_pose", 0.04);
+    declare_parameter("r_yaw",  0.02);
     declare_parameter("r_vel",  0.0025);
 
     // ── Pose-driven mode (for nuScenes / offline datasets) ────────────────────
@@ -141,27 +142,43 @@ void EKFNode::predict(double dt)
 void EKFNode::updatePose(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
 {
     const double r_pose = get_parameter("r_pose").as_double();
+    const double r_yaw  = get_parameter("r_yaw").as_double();
 
-    Eigen::Vector2d z;
-    z << msg->pose.position.x, msg->pose.position.y;
+    // Extract measured yaw from orientation quaternion
+    const double qx = msg->pose.orientation.x;
+    const double qy = msg->pose.orientation.y;
+    const double qz = msg->pose.orientation.z;
+    const double qw = msg->pose.orientation.w;
+    const double yaw_measured = std::atan2(2.0 * (qw * qz + qx * qy),
+                                           1.0 - 2.0 * (qy * qy + qz * qz));
 
-    Eigen::Matrix<double, 2, 4> H;
+    Eigen::Vector3d z;
+    z << msg->pose.position.x, msg->pose.position.y, yaw_measured;
+
+    Eigen::Matrix<double, 3, 4> H;
     H.setZero();
-    H(0, 0) = 1.0;
-    H(1, 1) = 1.0;
+    H(0, 0) = 1.0; // x
+    H(1, 1) = 1.0; // y
+    H(2, 2) = 1.0; // yaw
 
-    Eigen::Matrix2d R = Eigen::Matrix2d::Identity() * r_pose;
+    Eigen::Matrix3d R = Eigen::Matrix3d::Zero();
+    R(0, 0) = r_pose;
+    R(1, 1) = r_pose;
+    R(2, 2) = r_yaw;
 
-    Eigen::Vector2d innovation = z - H * state_;
-    Eigen::Matrix2d S = H * covariance_ * H.transpose() + R;
+    Eigen::Vector3d innovation = z - H * state_;
 
-    // NIS: should average ~2.0 for 2D measurement when well-tuned.
-    // Consistently > 2 → R too small or Q too small.
-    // Consistently < 2 → R too large or Q too large.
+    // Wrap yaw innovation to [-M_PI, M_PI]
+    while (innovation(2) > M_PI)  innovation(2) -= 2.0 * M_PI;
+    while (innovation(2) < -M_PI) innovation(2) += 2.0 * M_PI;
+
+    Eigen::Matrix3d S = H * covariance_ * H.transpose() + R;
+
+    // NIS: should average ~3.0 for 3D measurement when well-tuned.
     double nis = innovation.transpose() * S.inverse() * innovation;
-    RCLCPP_DEBUG(get_logger(), "Pose NIS: %.3f (target ~2.0)", nis);
+    RCLCPP_DEBUG(get_logger(), "Pose NIS: %.3f (target ~3.0)", nis);
 
-    Eigen::Matrix<double, 4, 2> K = covariance_ * H.transpose() * S.inverse();
+    Eigen::Matrix<double, 4, 3> K = covariance_ * H.transpose() * S.inverse();
 
     state_ = state_ + K * innovation;
 

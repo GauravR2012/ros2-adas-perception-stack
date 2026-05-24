@@ -25,7 +25,7 @@ class NuScenesAVPlayer(Node):
         super().__init__("nuscenes_av_player")
 
         # ---------------- CONFIG ----------------
-        self.nusc_root = "/home/adarsh/av_perception/data/nuscenes"
+        self.nusc_root = os.environ.get("NUSCENES_DIR", "/home/adarsh/av_perception/data/nuscenes")
         self.version = "v1.0-mini"
         self.cam = "CAM_FRONT"
         self.lidar = "LIDAR_TOP"
@@ -135,6 +135,16 @@ class NuScenesAVPlayer(Node):
 
         marker_array = MarkerArray()
 
+        # ── Wipe all previous GT markers before re-publishing ──
+        # This prevents stale green boxes accumulating when annotation
+        # count changes between samples or on scene loop.
+        delete_all = Marker()
+        delete_all.header.frame_id = "map"
+        delete_all.header.stamp = timestamp
+        delete_all.ns = "gt_boxes"
+        delete_all.action = Marker.DELETEALL
+        marker_array.markers.append(delete_all)
+
         for i, ann_token in enumerate(sample["anns"]):
             ann = self.nusc.get("sample_annotation", ann_token)
 
@@ -177,6 +187,11 @@ class NuScenesAVPlayer(Node):
             m.color.g = 1.0
             m.color.b = 0.0
             m.color.a = 0.5
+
+            # Lifetime slightly longer than the 0.5s timer so markers
+            # don't flicker, but short enough to auto-expire on pause/crash.
+            m.lifetime.sec = 0
+            m.lifetime.nanosec = 800000000
 
             marker_array.markers.append(m)
 
