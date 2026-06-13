@@ -77,7 +77,8 @@ EKFNode::EKFNode()
                 last_time_ = now;
                 if (dt <= 0.0 || dt > 1.0) return;
                 predict(dt);
-                publishOdometry();
+                // Use wall-clock stamp here — no incoming message in this path
+                publishOdometry(now);
             });
         RCLCPP_INFO(get_logger(),
             "Pose-driven mode ENABLED — predict timer at %.1f Hz. "
@@ -234,22 +235,28 @@ void EKFNode::odomCallback(const nav_msgs::msg::Odometry::SharedPtr msg)
     auto current_time = this->now();
 
     if (!initialized_) {
-        // Wait for first pose to initialize position before predicting.
+        // Initialize position to origin for local odometry tracking
+        state_.setZero();
         last_time_ = current_time;
+        initialized_ = true;
+        RCLCPP_INFO(get_logger(), "EKF initialized at (0,0,0) from odometry");
         return;
     }
 
     double dt = (current_time - last_time_).seconds();
     last_time_ = current_time;
 
-    if (dt <= 0.0 || dt > 1.0) {
+    if (dt <= 0.0 || dt > 5.0) {
         RCLCPP_WARN(get_logger(), "Skipping predict: bad dt=%.4f", dt);
         return;
     }
 
     predict(dt);
     updateVelocity(msg->twist.twist.linear.x);
-    publishOdometry();
+    // ── FIX: use message stamp so TF timestamp matches the /scan timestamp
+    // that slam_toolbox will look up. Using this->now() causes a ~2 ms skew
+    // that makes tf2 believe the transform is in the future → silent drop.
+    publishOdometry(msg->header.stamp);
 }
 
 void EKFNode::imuCallback(const sensor_msgs::msg::Imu::SharedPtr msg)
@@ -275,11 +282,8 @@ void EKFNode::poseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
                                1.0 - 2.0 * (qy*qy + qz*qz));
         state_(3) = 0.0;
 
-        last_time_   = this->now();
-
-        // ✅ ADD THIS LINE HERE
+        last_time_ = this->now();
         trajectory_marker_.points.clear();
-
         initialized_ = true;
 
         RCLCPP_INFO(get_logger(),
@@ -293,7 +297,7 @@ void EKFNode::poseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
     // In odom-driven mode publish after each pose correction.
     // In pose-driven mode the predict timer handles publishing.
     if (!pose_driven_mode_) {
-        publishOdometry();
+        publishOdometry(msg->header.stamp);
     }
 }
 
@@ -324,10 +328,8 @@ void EKFNode::normalizeYaw()
 // ─────────────────────────────────────────────────────────────────────────────
 // Publishing
 // ─────────────────────────────────────────────────────────────────────────────
-void EKFNode::publishOdometry()
+void EKFNode::publishOdometry(const builtin_interfaces::msg::Time & stamp)
 {
-    const auto stamp = this->now();
-
     tf2::Quaternion q;
     q.setRPY(0.0, 0.0, state_(2));
 
@@ -345,6 +347,8 @@ void EKFNode::publishOdometry()
     odom_msg.pose.pose.orientation.z = q.z();
     odom_msg.pose.pose.orientation.w = q.w();
     odom_msg.twist.twist.linear.x    = state_(3);
+    odom_msg.twist.twist.angular.z   = yaw_rate_;   // ← FIX: was missing; SLAM Toolbox
+                                                     //   needs this for its motion model
 
     // =======================
     // Pose covariance (6x6)
@@ -366,7 +370,6 @@ void EKFNode::publishOdometry()
     odom_msg.pose.covariance[14] = 0.1;  // z-z
     odom_msg.pose.covariance[21] = 0.1;  // roll-roll
     odom_msg.pose.covariance[28] = 0.1;  // pitch-pitch
-
 
     // =======================
     // Twist covariance (6x6)
@@ -395,13 +398,11 @@ void EKFNode::publishOdometry()
     tf_broadcaster_->sendTransform(tf_msg);
 
     // ── Trajectory marker for RViz ────────────────────────────────────────────
-    publishTrajectoryMarker();
+    publishTrajectoryMarker(stamp);
 }
 
-void EKFNode::publishTrajectoryMarker()
+void EKFNode::publishTrajectoryMarker(const builtin_interfaces::msg::Time & stamp)
 {
-    const auto stamp = this->now();
-
     trajectory_marker_.header.stamp    = stamp;
     trajectory_marker_.header.frame_id = "odom";
     trajectory_marker_.ns              = "ekf_trajectory";

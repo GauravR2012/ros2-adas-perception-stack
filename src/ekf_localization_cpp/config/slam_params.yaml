@@ -1,13 +1,67 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# SLAM Toolbox parameters for nuScenes LiDAR data
+# ─────────────────────────────────────────────────────────────────────────────
 slam_toolbox:
   ros__parameters:
-    odom_frame:        odom
-    base_frame:        base_link
-    map_frame:         map
-    scan_topic:        /scan
-    mode:              mapping
-    use_sim_time:      false
-    resolution:        0.05
-    max_laser_range:   10.0
-    minimum_travel_distance: 0.1
-    minimum_travel_heading:  0.1
-    map_update_interval:     1.0
+
+    # ── Frames ────────────────────────────────────────────────────────────────
+    odom_frame:   odom
+    base_frame:   base_link
+    map_frame:    map
+    scan_topic:   /scan
+
+    # ── Mode ──────────────────────────────────────────────────────────────────
+    mode:           mapping         # 'mapping' or 'localization'
+    use_sim_time:   false
+
+    # ── Map resolution ────────────────────────────────────────────────────────
+    resolution:     0.05            # metres per pixel
+
+    # ── Laser ─────────────────────────────────────────────────────────────────
+    max_laser_range:            50.0
+    minimum_time_interval:      0.5   # process at most 2 Hz to reduce queue pressure
+
+    # ── Travel thresholds (trigger new scan insertion) ────────────────────────
+    minimum_travel_distance:    0.3   # metres
+    minimum_travel_heading:     0.15  # radians (~8.6°)
+
+    # ── Map updates ───────────────────────────────────────────────────────────
+    map_update_interval:        2.0   # seconds between /map publishes
+
+    # ── Solver ────────────────────────────────────────────────────────────────
+    solver_plugin: solver_plugins::CeresSolver
+    ceres_linear_solver: SPARSE_NORMAL_CHOLESKY
+    ceres_preconditioner: SCHUR_JACOBI
+    ceres_trust_strategy: LEVENBERG_MARQUARDT
+    ceres_dogleg_type: TRADITIONAL_DOGLEG
+    ceres_loss_function: None
+
+    # ── Scan matching ─────────────────────────────────────────────────────────
+    correlation_search_space_dimension:   0.5
+    correlation_search_space_resolution:  0.01
+    correlation_search_space_smear_deviation: 0.1
+
+    loop_search_space_dimension:          8.0
+    loop_search_space_resolution:         0.05
+    loop_search_space_smear_deviation:    0.03
+
+    # ── Loop closure ──────────────────────────────────────────────────────────
+    do_loop_closing:           true
+    loop_match_minimum_chain_size:  3
+    loop_match_maximum_variance_coarse: 3.0
+    loop_match_minimum_response_coarse: 0.35
+    loop_match_minimum_response_fine:   0.45
+
+    # ── Scan buffer ───────────────────────────────────────────────────────────
+    scan_buffer_size:          10
+    scan_buffer_maximum_scan_distance: 10.0
+    use_scan_matching:         true
+    use_scan_barycenter:       true
+
+    # ── Transform timeout ─────────────────────────────────────────────────────
+    transform_timeout:         1.0    # was 0.2 — give TF more time to arrive
+    tf_buffer_duration:        60.0   # was 30.0
+
+    # ── Debug ─────────────────────────────────────────────────────────────────
+    debug_logging:             false
+    throttle_scans:            3      # process every 3rd scan — reduces queue pressure

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <rclcpp/rclcpp.hpp>
+#include <builtin_interfaces/msg/time.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
@@ -28,8 +29,8 @@ private:
     void poseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
 
     // ── Publishing ────────────────────────────────────────────────────────────
-    void publishOdometry();
-    void publishTrajectoryMarker();
+    void publishOdometry(const builtin_interfaces::msg::Time & stamp);
+    void publishTrajectoryMarker(const builtin_interfaces::msg::Time & stamp);
 
     // ── Health monitoring ─────────────────────────────────────────────────────
     void watchdogCallback();

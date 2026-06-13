@@ -99,7 +99,12 @@ add_executable(fake_laser fake_laser.cpp)
 ament_target_dependencies(fake_laser
   rclcpp sensor_msgs)
 
-install(TARGETS slam_pose_bridge fake_laser
+# ── PointCloud2 → LaserScan converter ────────────────────────────────────────
+add_executable(pointcloud_to_laserscan src/pointcloud_to_laserscan_node.cpp)
+ament_target_dependencies(pointcloud_to_laserscan
+  rclcpp sensor_msgs)
+
+install(TARGETS slam_pose_bridge fake_laser pointcloud_to_laserscan
   DESTINATION lib/${PROJECT_NAME})
 
 ament_package()

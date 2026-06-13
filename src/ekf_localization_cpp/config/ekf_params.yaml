@@ -5,5 +5,5 @@ ekf_localization_cpp:
     q_vel:  0.002
     r_pose: 0.04
     r_vel:  0.0025
-
-
+    pose_driven_mode: false
+    predict_rate_hz:  10.0
