@@ -7,8 +7,10 @@ from rclpy.node import Node
 
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Odometry
-from sensor_msgs.msg import Imu, PointCloud2, PointField
+from sensor_msgs.msg import Imu, PointCloud2, PointField, Image
 from std_msgs.msg import Header
+from cv_bridge import CvBridge
+import cv2
 
 from nuscenes.nuscenes import NuScenes
 
@@ -123,6 +125,19 @@ class NuScenesBridge(Node):
             '/lidar/points',
             10
         )
+
+        # ======================================================
+        # 6 SURROUND CAMERAS PUBLISHERS
+        # ======================================================
+        self.bridge = CvBridge()
+        self.cam_names = [
+            'CAM_FRONT', 'CAM_FRONT_LEFT', 'CAM_FRONT_RIGHT',
+            'CAM_BACK', 'CAM_BACK_LEFT', 'CAM_BACK_RIGHT'
+        ]
+        self.cam_pubs = {}
+        for cam in self.cam_names:
+            topic_name = f"/camera/{cam.lower().replace('cam_', '')}/image_raw"
+            self.cam_pubs[cam] = self.create_publisher(Image, topic_name, 10)
 
         # ======================================================
         # STATE
@@ -288,12 +303,22 @@ class NuScenesBridge(Node):
         # PUBLISH POINT CLOUD
         # ======================================================
 
-        pc_msg = self.create_pointcloud2(
-            points,
-            ros_stamp
-        )
-
         self.pc_pub.publish(pc_msg)
+
+        # ======================================================
+        # PUBLISH 6 SURROUND CAMERAS
+        # ======================================================
+        for cam in self.cam_names:
+            if cam in sample['data']:
+                cam_token = sample['data'][cam]
+                cam_sd = self.nusc.get('sample_data', cam_token)
+                cam_path = os.path.join(self.nusc.dataroot, cam_sd['filename'])
+                img = cv2.imread(cam_path)
+                if img is not None:
+                    img_msg = self.bridge.cv2_to_imgmsg(img, encoding="bgr8")
+                    img_msg.header.stamp = ros_stamp
+                    img_msg.header.frame_id = f"camera_{cam.lower().replace('cam_', '')}"
+                    self.cam_pubs[cam].publish(img_msg)
 
         # ======================================================
         # POSE

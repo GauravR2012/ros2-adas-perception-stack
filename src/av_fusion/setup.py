@@ -37,6 +37,9 @@ setup(
             'kitti_player = av_fusion.kitti_player:main',
             'collision_estimator = av_fusion.collision_estimator:main',
             'nuscenes_bridge = av_fusion.nuscenes_bridge:main',
+            'bev_projection = av_fusion.bev_projection_node:main',
+            'bev_localization = av_fusion.bev_localization_node:main',
+            'tracking_evaluator_node = av_fusion.tracking_evaluator_node:main',
         ],
     },
 )
