@@ -299,10 +299,10 @@ class NuScenesBridge(Node):
 
         ros_stamp = self.get_clock().now().to_msg()
 
-        # ======================================================
-        # PUBLISH POINT CLOUD
-        # ======================================================
+        # Create PointCloud2 messa                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          ge
+        pc_msg = self.create_pointcloud2(points, ros_stamp)
 
+        # Publish it
         self.pc_pub.publish(pc_msg)
 
         # ======================================================
@@ -311,7 +311,7 @@ class NuScenesBridge(Node):
         for cam in self.cam_names:
             if cam in sample['data']:
                 cam_token = sample['data'][cam]
-                cam_sd = self.nusc.get('sample_data', cam_token)
+                cam_sd = self.nusc.get('sample_                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         data', cam_token)
                 cam_path = os.path.join(self.nusc.dataroot, cam_sd['filename'])
                 img = cv2.imread(cam_path)
                 if img is not None:

@@ -52,11 +52,11 @@ def generate_launch_description():
             output='screen'
         ),
 
-        # 4. LiDAR Cluster Detector (process point cloud to bounding boxes)
+        # 4. PointPillars LiDAR Detector (3D deep learning object detection)
         Node(
             package='av_fusion',
-            executable='lidar_cluster_detector',
-            name='lidar_cluster_detector',
+            executable='pointpillars_detector',
+            name='pointpillars_detector',
             remappings=[('/lidar/points', '/points')],
             output='screen'
         ),

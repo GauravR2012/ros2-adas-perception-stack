@@ -2,6 +2,7 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import PointCloud2
 from vision_msgs.msg import Detection3DArray, Detection3D, BoundingBox3D
+from visualization_msgs.msg import Marker, MarkerArray
 from sensor_msgs_py import point_cloud2
 import numpy as np
 import torch
@@ -23,9 +24,9 @@ class PointPillarsDetector(Node):
             10
         )
 
-        self.publisher = self.create_publisher(
-            Detection3DArray,
-            "/detections/boxes_3d",
+        self.marker_pub = self.create_publisher(
+            MarkerArray,
+            "/detections/markers",
             10
         )
 
@@ -45,16 +46,20 @@ class PointPillarsDetector(Node):
                 skip_nans=True):
             points.append([p[0], p[1], p[2], p[3]])
 
+        if len(points) == 0:
+            return
+
         points = np.array(points)
 
         result, _ = inference_detector(self.model, points)
 
         detections = Detection3DArray()
         detections.header = msg.header
+        marker_array = MarkerArray()
 
         boxes = result.pred_instances_3d.bboxes_3d
 
-        for box in boxes:
+        for idx, box in enumerate(boxes):
             det = Detection3D()
             bbox = BoundingBox3D()
 
@@ -72,7 +77,30 @@ class PointPillarsDetector(Node):
             det.bbox = bbox
             detections.detections.append(det)
 
+            # RViz Marker
+            marker = Marker()
+            marker.header = msg.header
+            marker.ns = "pointpillars_detections"
+            marker.id = idx
+            marker.type = Marker.CUBE
+            marker.action = Marker.ADD
+            marker.pose.position.x = float(center[0])
+            marker.pose.position.y = float(center[1])
+            marker.pose.position.z = float(center[2])
+            marker.pose.orientation.w = 1.0
+            marker.scale.x = float(dims[0])
+            marker.scale.y = float(dims[1])
+            marker.scale.z = float(dims[2])
+            marker.color.r = 0.0
+            marker.color.g = 0.8
+            marker.color.b = 1.0
+            marker.color.a = 0.5
+            marker.lifetime.sec = 1
+
+            marker_array.markers.append(marker)
+
         self.publisher.publish(detections)
+        self.marker_pub.publish(marker_array)
 
 
 def main():
