@@ -1,9 +1,47 @@
+# Python virtual environments
+segmentation_env/
+.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# ROS2 generated files
+build/
+install/
+log/
+
+# Datasets
+data/
+maps/
+
+# ROS recordings / databases
+*.bag
+*.db3
+*.db
+
+# Point clouds
+*.pcd
+*.bin
+
+# ML model weights
+*.pth
+*.pt
+*.onnx
+
+# Large video files
+*.mp4
+*.avi
+*.mov
+
 .vscode/
 __pycache__/
 *.pyc
 build/
 install/
-segmentation_env/
 log/
 *.vc.db
 *.db
