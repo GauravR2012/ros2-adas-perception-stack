@@ -6,38 +6,36 @@ The project is designed as an experimental **autonomous driving perception stack
 
 The long-term objective is to evolve the stack from raw sensors to downstream planning/control:
 
-```
-Raw Sensors
-  │
-  ├── Camera
-  └── LiDAR
-       │
-       ▼
-   Perception
-       │
-       ├── Semantic Segmentation
-       ├── Road Segmentation
-       ├── Lane Detection
-       ├── Optical Flow
-       └── 3D Object Detection
-       │
-       ▼
-Tracking & State Estimation
-       │
-       ├── Data Association
-       ├── Multi-Object Tracking
-       ├── Velocity Estimation
-       └── Ego-relative State
-       │
-       ▼
-Scene Understanding
-       │
-       ├── Lane Geometry
-       ├── TTC
-       └── Collision Risk
-       │
-       ▼
-Downstream Planning / Control
+```mermaid
+flowchart TD
+    A[Raw Sensors] --> B[Camera]
+    A --> C[LiDAR]
+    B --> D[Perception]
+    C --> D
+    D --> D1[Semantic Segmentation]
+    D --> D2[Road Segmentation]
+    D --> D3[Lane Detection]
+    D --> D4[Optical Flow]
+    D --> D5[3D Object Detection]
+    D1 --> E[Tracking & State Estimation]
+    D2 --> E
+    D3 --> E
+    D4 --> E
+    D5 --> E
+    E --> E1[Data Association]
+    E --> E2[Multi-Object Tracking]
+    E --> E3[Velocity Estimation]
+    E --> E4[Ego-relative State]
+    E1 --> F[Scene Understanding]
+    E2 --> F
+    E3 --> F
+    E4 --> F
+    F --> F1[Lane Geometry]
+    F --> F2[TTC]
+    F --> F3[Collision Risk]
+    F1 --> G[Downstream Planning / Control]
+    F2 --> G
+    F3 --> G
 ```
 
 ---
@@ -100,46 +98,34 @@ The stack currently contains both **classical computer-vision methods** and **le
 
 ## System Architecture
 
-```
-nuScenes Mini
-      │
-      ▼
-┌───────────────────┐
-│  nuScenes Player   │
-└─────────┬──────────┘
-          │
-    ┌─────┴─────┐
-    │           │
-    ▼           ▼
-  Camera       LiDAR
-    │             │
-    ▼             ▼
- Semantic     LiDAR Cluster
-Segmentation    Detection
-    │             │
-    ▼             ▼
-Road Mask     3D Objects
-    │             │
-    ▼             ▼
-Lane Detection  Tracking
-    │             │
-    ▼             ▼
-Lane Geometry   Velocity
-    │             │
-    └──────┬──────┘
-           ▼
-   Scene Understanding
-           │
-    ┌──────┴──────┐
-    ▼             ▼
-Optical Flow     TTC
-    │             │
-    └──────┬──────┘
-           ▼
-     Risk Reasoning
-           │
-           ▼
-   Planning / Control
+```mermaid
+flowchart TD
+    N[nuScenes Mini] --> P[nuScenes Player]
+    P --> CAM[Camera]
+    P --> LID[LiDAR]
+
+    CAM --> SEM[Semantic Segmentation]
+    LID --> LCD[LiDAR Cluster Detection]
+
+    SEM --> RM[Road Mask]
+    LCD --> OBJ[3D Objects]
+
+    RM --> LD[Lane Detection]
+    OBJ --> TRK[Tracking]
+
+    LD --> LG[Lane Geometry]
+    TRK --> VEL[Velocity]
+
+    LG --> SU[Scene Understanding]
+    VEL --> SU
+
+    SU --> OF[Optical Flow]
+    SU --> TTC[TTC]
+
+    OF --> RR[Risk Reasoning]
+    TTC --> RR
+
+    RR --> PC[Planning / Control]
 ```
 
 ---
@@ -197,14 +183,10 @@ The segmentation output provides the semantic foundation for downstream road and
 
 The road segmentation node converts the semantic segmentation output into a binary road mask.
 
-```
-Semantic Segmentation
-        │
-        ▼
-  Class ID Filtering
-        │
-        ▼
-   Binary Road Mask
+```mermaid
+flowchart TD
+    A[Semantic Segmentation] --> B[Class ID Filtering]
+    B --> C[Binary Road Mask]
 ```
 
 **Input**
@@ -241,41 +223,21 @@ The lane detector combines classical computer vision with the learned road segme
 
 **Processing Pipeline**
 
-```
-Camera Image
-      │
-      ▼
-   Road Mask
-      │
-      ▼
-   Road ROI
-      │
-      ▼
-Lane-Marking Extraction
-      │
-      ├── White markings
-      └── Yellow markings
-      │
-      ▼
-Morphological Filtering
-      │
-      ▼
-Canny Edge Detection
-      │
-      ▼
-Hough Line Transform
-      │
-      ▼
-Left / Right Lane Classification
-      │
-      ▼
-   Lane Fitting
-      │
-      ▼
-Temporal Tracking
-      │
-      ▼
-Lane-Pair Geometry
+```mermaid
+flowchart TD
+    A[Camera Image] --> B[Road Mask]
+    B --> C[Road ROI]
+    C --> D[Lane-Marking Extraction]
+    D --> D1[White markings]
+    D --> D2[Yellow markings]
+    D1 --> E[Morphological Filtering]
+    D2 --> E
+    E --> F[Canny Edge Detection]
+    F --> G[Hough Line Transform]
+    G --> H[Left / Right Lane Classification]
+    H --> I[Lane Fitting]
+    I --> J[Temporal Tracking]
+    J --> K[Lane-Pair Geometry]
 ```
 
 The road segmentation mask is used as a spatial constraint before lane extraction.
@@ -302,21 +264,14 @@ Current mechanisms include:
 
 Conceptually:
 
-```
-Current Frame
-      │
-      ▼
-Raw Lane Detection
-      │
-      ▼
-Temporal Consistency Check
-      │
-      ├── Valid ────────► Update Track
-      │
-      └── Invalid ──────► Reject / Retain Previous Estimate
-      │
-      ▼
-Temporal Estimate
+```mermaid
+flowchart TD
+    A[Current Frame] --> B[Raw Lane Detection]
+    B --> C{Temporal Consistency Check}
+    C -->|Valid| D[Update Track]
+    C -->|Invalid| E[Reject / Retain Previous Estimate]
+    D --> F[Temporal Estimate]
+    E --> F
 ```
 
 This allows the system to maintain a lane estimate when one side is temporarily missed.
@@ -343,11 +298,7 @@ The lane detector also estimates higher-level geometric quantities.
 Example diagnostic output:
 
 ```
-Lane geometry |
-width=1025px |
-offset=-149px |
-heading=-174.6deg |
-width_std=253.6px
+Lane geometry | width=1025px | offset=-149px | heading=-174.6deg | width_std=253.6px
 ```
 
 These quantities provide an interface between low-level lane perception and higher-level driving reasoning.
@@ -367,23 +318,13 @@ A classical sparse optical-flow baseline is implemented using:
 
 **Pipeline**
 
-```
-Frame t
-      │
-      ▼
-Shi-Tomasi Features
-      │
-      ▼
-Frame t+1
-      │
-      ▼
-Lucas-Kanade Tracking
-      │
-      ▼
-Tracked Feature Correspondences
-      │
-      ▼
-Motion Statistics
+```mermaid
+flowchart TD
+    A[Frame t] --> B[Shi-Tomasi Features]
+    B --> C[Frame t+1]
+    C --> D[Lucas-Kanade Tracking]
+    D --> E[Tracked Feature Correspondences]
+    E --> F[Motion Statistics]
 ```
 
 The implementation provides a lightweight classical baseline for temporal motion estimation.
@@ -416,22 +357,15 @@ The model is loaded using the Torchvision optical-flow API.
 
 **Pipeline**
 
-```
-Frame t                Frame t+1
-   │                       │
-   └───────────┬───────────┘
-               ▼
-          RAFT-Small
-               │
-               ▼
-         Dense Flow Field
-               │
-        ┌──────┴──────┐
-        ▼             ▼
-    Magnitude      Direction
-               │
-               ▼
-        Motion Statistics
+```mermaid
+flowchart TD
+    A[Frame t] --> C[RAFT-Small]
+    B[Frame t+1] --> C
+    C --> D[Dense Flow Field]
+    D --> E[Magnitude]
+    D --> F[Direction]
+    E --> G[Motion Statistics]
+    F --> G
 ```
 
 The current CPU implementation runs at approximately:
@@ -460,12 +394,14 @@ Because the nuScenes player loops the scene, the RAFT node also detects scene-lo
 
 The project intentionally maintains both classical and learned optical-flow implementations.
 
-```
-   Classical                    Learned
-Shi-Tomasi + Lucas-Kanade       RAFT-Small
-        │                           │
-        ▼                           ▼
-   Sparse Flow                 Dense Flow
+```mermaid
+flowchart LR
+    subgraph Classical
+    A[Shi-Tomasi + Lucas-Kanade] --> B[Sparse Flow]
+    end
+    subgraph Learned
+    C[RAFT-Small] --> D[Dense Flow]
+    end
 ```
 
 This allows future experimental comparison across:
@@ -490,20 +426,12 @@ A classical LiDAR perception backend based on spatial clustering is included.
 
 **Processing**
 
-```
-LiDAR Point Cloud
-      │
-      ▼
-Point Filtering
-      │
-      ▼
-DBSCAN Clustering
-      │
-      ▼
-Cluster Centroids
-      │
-      ▼
-3D Bounding Box Estimation
+```mermaid
+flowchart TD
+    A[LiDAR Point Cloud] --> B[Point Filtering]
+    B --> C[DBSCAN Clustering]
+    C --> D[Cluster Centroids]
+    D --> E[3D Bounding Box Estimation]
 ```
 
 This provides a lightweight object-detection baseline without requiring a learned 3D detector.
@@ -518,20 +446,12 @@ The perception frontend is designed so that the downstream tracking layer does n
 
 Conceptually:
 
-```
-                     Detector Interface
-                            │
-      ┌───────────────┬─────────────┬───────────────┐
-      ▼                ▼             ▼               ▼
-Ground Truth        DBSCAN        LiDAR        Learned 3D
-                    LiDAR                        Detector
-      │                │             │               │
-      └────────────────┴─────────────┴───────────────┘
-                            ▼
-                    Object Detections
-                            │
-                            ▼
-                         Tracker
+```mermaid
+flowchart TD
+    A[Ground Truth] --> E[Object Detection Interface]
+    B[DBSCAN LiDAR] --> E
+    C[LiDAR Learned 3D Detector] --> E
+    E --> F[Tracker]
 ```
 
 Potential detector backends include:
@@ -564,23 +484,13 @@ The tracking stage follows a tracking-by-detection architecture.
 
 **Pipeline**
 
-```
-Detections
-      │
-      ▼
-Prediction
-      │
-      ▼
-Cost Matrix
-      │
-      ▼
-Hungarian Assignment
-      │
-      ▼
-Kalman Update
-      │
-      ▼
-Tracks
+```mermaid
+flowchart TD
+    A[Detections] --> B[Prediction]
+    B --> C[Cost Matrix]
+    C --> D[Hungarian Assignment]
+    D --> E[Kalman Update]
+    E --> F[Tracks]
 ```
 
 This separates instantaneous object detection from persistent object state estimation.
@@ -593,11 +503,10 @@ Tracked object states are used to estimate object velocity.
 
 The system supports reasoning about:
 
-```
-Object Velocity + Ego Velocity
-              │
-              ▼
-      Relative Velocity
+```mermaid
+flowchart LR
+    A[Object Velocity] --> C[Relative Velocity]
+    B[Ego Velocity] --> C
 ```
 
 This provides the basis for downstream collision-risk estimation.
@@ -701,30 +610,23 @@ The visualization layer is deliberately separated from the perception algorithms
 
 ```
 ros2-adas-perception-stack/
-│
 ├── src/
 │   └── av_fusion/
 │       ├── av_fusion/
 │       │   ├── nuscenes_player.py
-│       │   │
 │       │   ├── semantic_segmentation_node.py
 │       │   ├── road_segmentation_node.py
 │       │   ├── lane_detection_node.py
-│       │   │
 │       │   ├── optical_flow_node.py
 │       │   ├── raft_optical_flow_node.py
-│       │   │
 │       │   ├── lidar_cluster_detector.py
 │       │   ├── gt_tracker_node.py
 │       │   ├── lidar_detection_visualizer.py
-│       │   │
 │       │   ├── pointpillars_detector_node.py
 │       │   └── centerpoint_detector_node.py
-│       │
 │       ├── package.xml
 │       ├── setup.py
 │       └── resource/
-│
 ├── launch/
 ├── configs/
 ├── requirements.txt
@@ -951,48 +853,41 @@ rviz2
 
 **Camera Perception**
 
-```
-nuScenes → Camera → Semantic Segmentation → Road Mask → Lane Detection → Temporal Lane Geometry
+```mermaid
+flowchart LR
+    A[nuScenes] --> B[Camera] --> C[Semantic Segmentation] --> D[Road Mask] --> E[Lane Detection] --> F[Temporal Lane Geometry]
 ```
 
 **Motion Perception**
 
-```
-Camera → Shi-Tomasi + Lucas-Kanade ─┐
-      └→ RAFT-Small ────────────────┴→ Temporal Motion
+```mermaid
+flowchart LR
+    A[Camera] --> B[Shi-Tomasi + Lucas-Kanade]
+    A --> C[RAFT-Small]
+    B --> D[Temporal Motion]
+    C --> D
 ```
 
 **LiDAR Perception**
 
-```
-LiDAR → Clustering / 3D Detection → Tracking → Velocity → TTC
+```mermaid
+flowchart LR
+    A[LiDAR] --> B[Clustering / 3D Detection] --> C[Tracking] --> D[Velocity] --> E[TTC]
 ```
 
 **Future Multimodal Stack**
 
-```
-Camera ──────────────┐
-                      ▼
-              Camera-LiDAR Fusion
-                      ▲
-LiDAR ────────────────┘
-                      │
-                      ▼
-              Unified 3D Scene
-                      │
-                      ▼
-                  Tracking
-                      │
-              ┌───────┴───────┐
-              ▼               ▼
-       Lane Geometry         TTC
-              │               │
-              └───────┬───────┘
-                      ▼
-               Risk Reasoning
-                      │
-                      ▼
-              Planning / Control
+```mermaid
+flowchart TD
+    A[Camera] --> C[Camera-LiDAR Fusion]
+    B[LiDAR] --> C
+    C --> D[Unified 3D Scene]
+    D --> E[Tracking]
+    E --> F[Lane Geometry]
+    E --> G[TTC]
+    F --> H[Risk Reasoning]
+    G --> H
+    H --> I[Planning / Control]
 ```
 
 ---
@@ -1119,18 +1014,14 @@ Each major algorithm is implemented as an independent ROS 2 node with explicit t
 
 The tracking system is designed independently of the detection backend.
 
-```
-Ground Truth
-DBSCAN LiDAR
-PointPillars
-CenterPoint
-Camera-LiDAR Fusion
-         │
-         ▼
-Object Detection Interface
-         │
-         ▼
-      Tracker
+```mermaid
+flowchart TD
+    A[Ground Truth] --> F[Object Detection Interface]
+    B[DBSCAN LiDAR] --> F
+    C[PointPillars] --> F
+    D[CenterPoint] --> F
+    E[Camera-LiDAR Fusion] --> F
+    F --> G[Tracker]
 ```
 
 **Classical + Learned Baselines**
@@ -1153,8 +1044,9 @@ The goal is to progress from independent frame-level perception toward temporall
 
 The system exposes intermediate ROS 2 topics so that individual modules can be inspected independently:
 
-```
-Camera → Segmentation → Road Mask → Lane Detection
+```mermaid
+flowchart LR
+    A[Camera] --> B[Segmentation] --> C[Road Mask] --> D[Lane Detection]
 ```
 
 Each intermediate result can be visualized and debugged separately.
@@ -1191,8 +1083,9 @@ This repository demonstrates practical experience with:
 
 Modern ADAS systems are not simply a single neural network. A practical autonomous-driving system contains multiple interconnected layers:
 
-```
-Sensors → Perception → State Estimation → Tracking → Prediction → Risk Reasoning → Planning → Control
+```mermaid
+flowchart LR
+    A[Sensors] --> B[Perception] --> C[State Estimation] --> D[Tracking] --> E[Prediction] --> F[Risk Reasoning] --> G[Planning] --> H[Control]
 ```
 
 This project focuses primarily on the **perception, temporal estimation, tracking, and collision-risk layers** that connect raw sensor measurements to autonomous-driving decisions.
