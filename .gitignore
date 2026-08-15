@@ -1,6 +1,7 @@
 build/
 install/
 log/
+segmentation_env/
 *.gv
 *.pdf
 .vscode/

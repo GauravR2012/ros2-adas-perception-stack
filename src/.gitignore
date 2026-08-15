@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 build/
 install/
+segmentation_env/
 log/
 *.vc.db
 *.db
