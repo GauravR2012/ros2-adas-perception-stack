@@ -8,32 +8,32 @@ The long-term objective is to evolve the stack from raw sensors to downstream pl
 
 ```mermaid
 flowchart TD
-    A[Raw Sensors] --> B[Camera]
-    A --> C[LiDAR]
-    B --> D[Perception]
+    A["Raw Sensors"] --> B["Camera"]
+    A --> C["LiDAR"]
+    B --> D["Perception"]
     C --> D
-    D --> D1[Semantic Segmentation]
-    D --> D2[Road Segmentation]
-    D --> D3[Lane Detection]
-    D --> D4[Optical Flow]
-    D --> D5[3D Object Detection]
-    D1 --> E[Tracking & State Estimation]
+    D --> D1["Semantic Segmentation"]
+    D --> D2["Road Segmentation"]
+    D --> D3["Lane Detection"]
+    D --> D4["Optical Flow"]
+    D --> D5["3D Object Detection"]
+    D1 --> E["Tracking and State Estimation"]
     D2 --> E
     D3 --> E
     D4 --> E
     D5 --> E
-    E --> E1[Data Association]
-    E --> E2[Multi-Object Tracking]
-    E --> E3[Velocity Estimation]
-    E --> E4[Ego-relative State]
-    E1 --> F[Scene Understanding]
+    E --> E1["Data Association"]
+    E --> E2["Multi-Object Tracking"]
+    E --> E3["Velocity Estimation"]
+    E --> E4["Ego-relative State"]
+    E1 --> F["Scene Understanding"]
     E2 --> F
     E3 --> F
     E4 --> F
-    F --> F1[Lane Geometry]
-    F --> F2[TTC]
-    F --> F3[Collision Risk]
-    F1 --> G[Downstream Planning / Control]
+    F --> F1["Lane Geometry"]
+    F --> F2["TTC"]
+    F --> F3["Collision Risk"]
+    F1 --> G["Downstream Planning  or  Control"]
     F2 --> G
     F3 --> G
 ```
@@ -100,32 +100,32 @@ The stack currently contains both **classical computer-vision methods** and **le
 
 ```mermaid
 flowchart TD
-    N[nuScenes Mini] --> P[nuScenes Player]
-    P --> CAM[Camera]
-    P --> LID[LiDAR]
+    N["nuScenes Mini"] --> P["nuScenes Player"]
+    P --> CAM["Camera"]
+    P --> LID["LiDAR"]
 
-    CAM --> SEM[Semantic Segmentation]
-    LID --> LCD[LiDAR Cluster Detection]
+    CAM --> SEM["Semantic Segmentation"]
+    LID --> LCD["LiDAR Cluster Detection"]
 
-    SEM --> RM[Road Mask]
-    LCD --> OBJ[3D Objects]
+    SEM --> RM["Road Mask"]
+    LCD --> OBJ["3D Objects"]
 
-    RM --> LD[Lane Detection]
-    OBJ --> TRK[Tracking]
+    RM --> LD["Lane Detection"]
+    OBJ --> TRK["Tracking"]
 
-    LD --> LG[Lane Geometry]
-    TRK --> VEL[Velocity]
+    LD --> LG["Lane Geometry"]
+    TRK --> VEL["Velocity"]
 
-    LG --> SU[Scene Understanding]
+    LG --> SU["Scene Understanding"]
     VEL --> SU
 
-    SU --> OF[Optical Flow]
-    SU --> TTC[TTC]
+    SU --> OF["Optical Flow"]
+    SU --> TTC["TTC"]
 
-    OF --> RR[Risk Reasoning]
+    OF --> RR["Risk Reasoning"]
     TTC --> RR
 
-    RR --> PC[Planning / Control]
+    RR --> PC["Planning  or  Control"]
 ```
 
 ---
@@ -185,8 +185,8 @@ The road segmentation node converts the semantic segmentation output into a bina
 
 ```mermaid
 flowchart TD
-    A[Semantic Segmentation] --> B[Class ID Filtering]
-    B --> C[Binary Road Mask]
+    A["Semantic Segmentation"] --> B["Class ID Filtering"]
+    B --> C["Binary Road Mask"]
 ```
 
 **Input**
@@ -225,19 +225,19 @@ The lane detector combines classical computer vision with the learned road segme
 
 ```mermaid
 flowchart TD
-    A[Camera Image] --> B[Road Mask]
-    B --> C[Road ROI]
-    C --> D[Lane-Marking Extraction]
-    D --> D1[White markings]
-    D --> D2[Yellow markings]
-    D1 --> E[Morphological Filtering]
+    A["Camera Image"] --> B["Road Mask"]
+    B --> C["Road ROI"]
+    C --> D["Lane-Marking Extraction"]
+    D --> D1["White markings"]
+    D --> D2["Yellow markings"]
+    D1 --> E["Morphological Filtering"]
     D2 --> E
-    E --> F[Canny Edge Detection]
-    F --> G[Hough Line Transform]
-    G --> H[Left / Right Lane Classification]
-    H --> I[Lane Fitting]
-    I --> J[Temporal Tracking]
-    J --> K[Lane-Pair Geometry]
+    E --> F["Canny Edge Detection"]
+    F --> G["Hough Line Transform"]
+    G --> H["Left  or  Right Lane Classification"]
+    H --> I["Lane Fitting"]
+    I --> J["Temporal Tracking"]
+    J --> K["Lane-Pair Geometry"]
 ```
 
 The road segmentation mask is used as a spatial constraint before lane extraction.
@@ -266,11 +266,11 @@ Conceptually:
 
 ```mermaid
 flowchart TD
-    A[Current Frame] --> B[Raw Lane Detection]
-    B --> C{Temporal Consistency Check}
-    C -->|Valid| D[Update Track]
-    C -->|Invalid| E[Reject / Retain Previous Estimate]
-    D --> F[Temporal Estimate]
+    A["Current Frame"] --> B["Raw Lane Detection"]
+    B --> C{"Temporal Consistency Check"}
+    C -->|"Valid"| D["Update Track"]
+    C -->|"Invalid"| E["Reject  or  Retain Previous Estimate"]
+    D --> F["Temporal Estimate"]
     E --> F
 ```
 
@@ -320,11 +320,11 @@ A classical sparse optical-flow baseline is implemented using:
 
 ```mermaid
 flowchart TD
-    A[Frame t] --> B[Shi-Tomasi Features]
-    B --> C[Frame t+1]
-    C --> D[Lucas-Kanade Tracking]
-    D --> E[Tracked Feature Correspondences]
-    E --> F[Motion Statistics]
+    A["Frame t"] --> B["Shi-Tomasi Features"]
+    B --> C["Frame t+1"]
+    C --> D["Lucas-Kanade Tracking"]
+    D --> E["Tracked Feature Correspondences"]
+    E --> F["Motion Statistics"]
 ```
 
 The implementation provides a lightweight classical baseline for temporal motion estimation.
@@ -359,12 +359,12 @@ The model is loaded using the Torchvision optical-flow API.
 
 ```mermaid
 flowchart TD
-    A[Frame t] --> C[RAFT-Small]
-    B[Frame t+1] --> C
-    C --> D[Dense Flow Field]
-    D --> E[Magnitude]
-    D --> F[Direction]
-    E --> G[Motion Statistics]
+    A["Frame t"] --> C["RAFT-Small"]
+    B["Frame t+1"] --> C
+    C --> D["Dense Flow Field"]
+    D --> E["Magnitude"]
+    D --> F["Direction"]
+    E --> G["Motion Statistics"]
     F --> G
 ```
 
@@ -397,10 +397,10 @@ The project intentionally maintains both classical and learned optical-flow impl
 ```mermaid
 flowchart LR
     subgraph Classical
-    A[Shi-Tomasi + Lucas-Kanade] --> B[Sparse Flow]
+    A["Shi-Tomasi + Lucas-Kanade"] --> B["Sparse Flow"]
     end
     subgraph Learned
-    C[RAFT-Small] --> D[Dense Flow]
+    C["RAFT-Small"] --> D["Dense Flow"]
     end
 ```
 
@@ -428,10 +428,10 @@ A classical LiDAR perception backend based on spatial clustering is included.
 
 ```mermaid
 flowchart TD
-    A[LiDAR Point Cloud] --> B[Point Filtering]
-    B --> C[DBSCAN Clustering]
-    C --> D[Cluster Centroids]
-    D --> E[3D Bounding Box Estimation]
+    A["LiDAR Point Cloud"] --> B["Point Filtering"]
+    B --> C["DBSCAN Clustering"]
+    C --> D["Cluster Centroids"]
+    D --> E["3D Bounding Box Estimation"]
 ```
 
 This provides a lightweight object-detection baseline without requiring a learned 3D detector.
@@ -448,10 +448,10 @@ Conceptually:
 
 ```mermaid
 flowchart TD
-    A[Ground Truth] --> E[Object Detection Interface]
-    B[DBSCAN LiDAR] --> E
-    C[LiDAR Learned 3D Detector] --> E
-    E --> F[Tracker]
+    A["Ground Truth"] --> E["Object Detection Interface"]
+    B["DBSCAN LiDAR"] --> E
+    C["LiDAR Learned 3D Detector"] --> E
+    E --> F["Tracker"]
 ```
 
 Potential detector backends include:
@@ -486,11 +486,11 @@ The tracking stage follows a tracking-by-detection architecture.
 
 ```mermaid
 flowchart TD
-    A[Detections] --> B[Prediction]
-    B --> C[Cost Matrix]
-    C --> D[Hungarian Assignment]
-    D --> E[Kalman Update]
-    E --> F[Tracks]
+    A["Detections"] --> B["Prediction"]
+    B --> C["Cost Matrix"]
+    C --> D["Hungarian Assignment"]
+    D --> E["Kalman Update"]
+    E --> F["Tracks"]
 ```
 
 This separates instantaneous object detection from persistent object state estimation.
@@ -505,8 +505,8 @@ The system supports reasoning about:
 
 ```mermaid
 flowchart LR
-    A[Object Velocity] --> C[Relative Velocity]
-    B[Ego Velocity] --> C
+    A["Object Velocity"] --> C["Relative Velocity"]
+    B["Ego Velocity"] --> C
 ```
 
 This provides the basis for downstream collision-risk estimation.
@@ -855,16 +855,16 @@ rviz2
 
 ```mermaid
 flowchart LR
-    A[nuScenes] --> B[Camera] --> C[Semantic Segmentation] --> D[Road Mask] --> E[Lane Detection] --> F[Temporal Lane Geometry]
+    A["nuScenes"] --> B["Camera"] --> C["Semantic Segmentation"] --> D["Road Mask"] --> E["Lane Detection"] --> F["Temporal Lane Geometry"]
 ```
 
 **Motion Perception**
 
 ```mermaid
 flowchart LR
-    A[Camera] --> B[Shi-Tomasi + Lucas-Kanade]
-    A --> C[RAFT-Small]
-    B --> D[Temporal Motion]
+    A["Camera"] --> B["Shi-Tomasi + Lucas-Kanade"]
+    A --> C["RAFT-Small"]
+    B --> D["Temporal Motion"]
     C --> D
 ```
 
@@ -872,22 +872,22 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    A[LiDAR] --> B[Clustering / 3D Detection] --> C[Tracking] --> D[Velocity] --> E[TTC]
+    A["LiDAR"] --> B["Clustering  or  3D Detection"] --> C["Tracking"] --> D["Velocity"] --> E["TTC"]
 ```
 
 **Future Multimodal Stack**
 
 ```mermaid
 flowchart TD
-    A[Camera] --> C[Camera-LiDAR Fusion]
-    B[LiDAR] --> C
-    C --> D[Unified 3D Scene]
-    D --> E[Tracking]
-    E --> F[Lane Geometry]
-    E --> G[TTC]
-    F --> H[Risk Reasoning]
+    A["Camera"] --> C["Camera-LiDAR Fusion"]
+    B["LiDAR"] --> C
+    C --> D["Unified 3D Scene"]
+    D --> E["Tracking"]
+    E --> F["Lane Geometry"]
+    E --> G["TTC"]
+    F --> H["Risk Reasoning"]
     G --> H
-    H --> I[Planning / Control]
+    H --> I["Planning  or  Control"]
 ```
 
 ---
@@ -1016,12 +1016,12 @@ The tracking system is designed independently of the detection backend.
 
 ```mermaid
 flowchart TD
-    A[Ground Truth] --> F[Object Detection Interface]
-    B[DBSCAN LiDAR] --> F
-    C[PointPillars] --> F
-    D[CenterPoint] --> F
-    E[Camera-LiDAR Fusion] --> F
-    F --> G[Tracker]
+    A["Ground Truth"] --> F["Object Detection Interface"]
+    B["DBSCAN LiDAR"] --> F
+    C["PointPillars"] --> F
+    D["CenterPoint"] --> F
+    E["Camera-LiDAR Fusion"] --> F
+    F --> G["Tracker"]
 ```
 
 **Classical + Learned Baselines**
@@ -1046,7 +1046,7 @@ The system exposes intermediate ROS 2 topics so that individual modules can be i
 
 ```mermaid
 flowchart LR
-    A[Camera] --> B[Segmentation] --> C[Road Mask] --> D[Lane Detection]
+    A["Camera"] --> B["Segmentation"] --> C["Road Mask"] --> D["Lane Detection"]
 ```
 
 Each intermediate result can be visualized and debugged separately.
@@ -1085,7 +1085,7 @@ Modern ADAS systems are not simply a single neural network. A practical autonomo
 
 ```mermaid
 flowchart LR
-    A[Sensors] --> B[Perception] --> C[State Estimation] --> D[Tracking] --> E[Prediction] --> F[Risk Reasoning] --> G[Planning] --> H[Control]
+    A["Sensors"] --> B["Perception"] --> C["State Estimation"] --> D["Tracking"] --> E["Prediction"] --> F["Risk Reasoning"] --> G["Planning"] --> H["Control"]
 ```
 
 This project focuses primarily on the **perception, temporal estimation, tracking, and collision-risk layers** that connect raw sensor measurements to autonomous-driving decisions.
