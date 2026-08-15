@@ -57,7 +57,7 @@ temporal filtering and lane-pair geometry consistency.
 
 ### Classical Optical Flow
 
-![Lucas-Kanade Optical Flow](assets/gifs/lk_optical_flow.png)
+![Lucas-Kanade Optical Flow](assets/images/lk_optical_flow.png)
 
 Classical sparse optical flow uses Shi-Tomasi feature detection followed by
 pyramidal Lucas-Kanade tracking.
