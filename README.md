@@ -57,14 +57,10 @@ temporal filtering and lane-pair geometry consistency.
 
 ### Classical Optical Flow
 
-![Lucas-Kanade Optical Flow](assets/gifs/lucas_kanade_flow.gif)
+![Lucas-Kanade Optical Flow](assets/gifs/lk_optical_flow.png)
 
 Classical sparse optical flow uses Shi-Tomasi feature detection followed by
 pyramidal Lucas-Kanade tracking.
-
-### RAFT-Small
-
-![RAFT Optical Flow](assets/gifs/raft_optical_flow.gif)
 
 RAFT-Small provides a learned dense optical-flow representation.
 
@@ -73,13 +69,7 @@ as a learned baseline for comparison with the classical Lucas-Kanade approach.
 
 ---
 
-## LiDAR Perception
 
-### LiDAR Point Cloud
-
-![LiDAR Point Cloud](assets/images/lidar_pointcloud.png)
-
-The nuScenes LiDAR stream is published through ROS 2 and visualized in RViz2.
 
 ### Ground-Truth 3D Objects
 
@@ -87,21 +77,11 @@ The nuScenes LiDAR stream is published through ROS 2 and visualized in RViz2.
 
 Ground-truth 3D bounding boxes from nuScenes are visualized in green.
 
-### Object Detection and Tracking
+![Ground Truth](assets/images/point_pillars.png)
 
-![Object Tracking](assets/gifs/object_tracking.gif)
+Point Pillars 3D bounding boxes (cyan) alongside Ground-truth bounding boxes (green) (lag observed due to cpu computation)
 
-The tracking pipeline maintains persistent object identities and estimates
-object motion from sequential detections.
 
----
-
-## RViz2 System Visualization
-
-![RViz2 ADAS Visualization](assets/gifs/rviz_full_stack.gif)
-
-RViz2 provides visualization of the sensor streams, ground truth,
-detections, tracks, lane perception, and other intermediate outputs.
 
 ---
 
