@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
+import threading
 import time
 
 import cv2
 import numpy as np
-import torch
 
 import rclpy
 from rclpy.node import Node
@@ -12,16 +12,18 @@ from rclpy.node import Node
 from rclpy.qos import (
     QoSProfile,
     ReliabilityPolicy,
-    HistoryPolicy
+    HistoryPolicy,
 )
 
 from sensor_msgs.msg import Image
 
 from cv_bridge import CvBridge
 
+import torch
+
 from torchvision.models.optical_flow import (
     raft_small,
-    Raft_Small_Weights
+    Raft_Small_Weights,
 )
 
 
@@ -29,10 +31,77 @@ class RAFTOpticalFlowNode(Node):
 
     def __init__(self):
 
-        super().__init__("raft_optical_flow_node")
+        super().__init__(
+            "raft_optical_flow_node"
+        )
 
         # ==========================================================
-        # STARTUP
+        # CONFIGURATION
+        # ==========================================================
+
+        self.INPUT_WIDTH = 640
+        self.INPUT_HEIGHT = 360
+
+        self.MAX_FLOW = 2000.0
+
+        # ==========================================================
+        # DEVICE
+        # ==========================================================
+
+        self.device = torch.device(
+            "cpu"
+        )
+
+        # ==========================================================
+        # ROS
+        # ==========================================================
+
+        self.bridge = CvBridge()
+
+        # IMPORTANT:
+        #
+        # Depth = 1 prevents ROS from building a large queue
+        # of stale camera frames.
+        #
+        qos = QoSProfile(
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            history=HistoryPolicy.KEEP_LAST,
+        )
+
+        # ==========================================================
+        # SUBSCRIBER
+        # ==========================================================
+
+        self.image_sub = self.create_subscription(
+            Image,
+            "/camera/front/image",
+            self.image_callback,
+            qos,
+        )
+
+        # ==========================================================
+        # PUBLISHERS
+        # ==========================================================
+
+        self.flow_overlay_pub = (
+            self.create_publisher(
+                Image,
+                "/camera/optical_flow/overlay",
+                qos,
+            )
+        )
+
+        self.flow_magnitude_pub = (
+            self.create_publisher(
+                Image,
+                "/camera/optical_flow/magnitude",
+                qos,
+            )
+        )
+
+        # ==========================================================
+        # LOAD RAFT
         # ==========================================================
 
         self.get_logger().info(
@@ -47,161 +116,100 @@ class RAFTOpticalFlowNode(Node):
             "=========================================="
         )
 
-        # ==========================================================
-        # DEVICE
-        # ==========================================================
-
-        self.device = torch.device("cpu")
-
         self.get_logger().info(
             f"Device: {self.device}"
         )
 
-        # ==========================================================
-        # RAFT INPUT RESOLUTION
-        #
-        # Keep this resolution for the first benchmark.
-        #
-        # 640 x 360 is divisible by 8.
-        # ==========================================================
-
-        self.INPUT_WIDTH = 640
-        self.INPUT_HEIGHT = 360
-
         self.get_logger().info(
-            "RAFT resolution: "
-            f"{self.INPUT_WIDTH}x{self.INPUT_HEIGHT}"
+            f"RAFT resolution: "
+            f"{self.INPUT_WIDTH}x"
+            f"{self.INPUT_HEIGHT}"
         )
-
-        # ==========================================================
-        # MODEL
-        # ==========================================================
 
         self.get_logger().info(
             "Loading RAFT-Small..."
         )
 
-        weights = Raft_Small_Weights.DEFAULT
+        weights = (
+            Raft_Small_Weights.DEFAULT
+        )
 
         self.model = raft_small(
             weights=weights
         )
 
-        self.model = self.model.to(
-            self.device
+        self.model = (
+            self.model.to(
+                self.device
+            )
         )
 
         self.model.eval()
-
-        self.transforms = (
-            weights.transforms()
-        )
 
         self.get_logger().info(
             "RAFT-Small loaded successfully."
         )
 
         # ==========================================================
-        # CV BRIDGE
+        # THREADING
         # ==========================================================
 
-        self.bridge = CvBridge()
+        # Camera callback NEVER performs RAFT inference.
+        #
+        # It only stores the newest frame.
+        #
+        self.latest_frame = None
 
-        # ==========================================================
-        # QoS
-        # ==========================================================
+        self.latest_stamp = None
 
-        qos = QoSProfile(
-            depth=1,
-            reliability=ReliabilityPolicy.RELIABLE,
-            history=HistoryPolicy.KEEP_LAST
+        self.frame_lock = (
+            threading.Lock()
         )
 
-        # ==========================================================
-        # SUBSCRIBER
-        # ==========================================================
-
-        self.image_sub = self.create_subscription(
-            Image,
-            "/camera/front/image",
-            self.image_callback,
-            qos
+        self.worker_condition = (
+            threading.Condition(
+                self.frame_lock
+            )
         )
 
-        # ==========================================================
-        # PUBLISHERS
-        # ==========================================================
+        self.worker_running = True
 
-        self.overlay_pub = self.create_publisher(
-            Image,
-            "/camera/raft_optical_flow/overlay",
-            qos
+        self.worker_busy = False
+
+        self.worker_thread = (
+            threading.Thread(
+                target=self.flow_worker,
+                daemon=True,
+            )
         )
 
-        self.magnitude_pub = self.create_publisher(
-            Image,
-            "/camera/raft_optical_flow/magnitude",
-            qos
-        )
-
-        self.dx_pub = self.create_publisher(
-            Image,
-            "/camera/raft_optical_flow/dx",
-            qos
-        )
-
-        self.dy_pub = self.create_publisher(
-            Image,
-            "/camera/raft_optical_flow/dy",
-            qos
-        )
+        self.worker_thread.start()
 
         # ==========================================================
         # FRAME STATE
         # ==========================================================
 
-        self.prev_frame = None
-        self.prev_timestamp = None
+        self.previous_frame = None
+
+        self.previous_stamp = None
 
         # ==========================================================
         # STATISTICS
         # ==========================================================
 
-        self.processed_frames = 0
+        self.received = 0
 
-        self.last_inference_time = 0.0
+        self.processed = 0
 
-        self.last_dt = 0.0
+        self.dropped = 0
 
-        self.last_mean = 0.0
-        self.last_median = 0.0
-        self.last_p75 = 0.0
-        self.last_p90 = 0.0
-        self.last_p95 = 0.0
-        self.last_p99 = 0.0
-        self.last_max = 0.0
+        self.scene_resets = 0
 
-        self.last_mean_dx = 0.0
-        self.last_mean_dy = 0.0
+        self.invalid_dt = 0
 
-        # ==========================================================
-        # SANITY PARAMETERS
-        # ==========================================================
-
-        # This is NOT a hard rejection threshold.
-        # It is only used to report how much of the field is
-        # extremely large.
-        self.SANITY_FLOW_THRESHOLD = 200.0
-
-        # ==========================================================
-        # VISUALIZATION
-        # ==========================================================
-
-        self.ARROW_STEP = 24
-
-        self.ARROW_MIN_MAGNITUDE = 1.0
-
-        self.MAX_VIS_MAGNITUDE = 50.0
+        self.last_log_time = (
+            time.perf_counter()
+        )
 
         # ==========================================================
         # STARTUP
@@ -212,28 +220,44 @@ class RAFTOpticalFlowNode(Node):
         )
 
         self.get_logger().info(
-            "Robust flow statistics enabled."
+            "Latest-frame buffering enabled."
         )
 
         self.get_logger().info(
-            "Timestamp / delta-time monitoring enabled."
+            "Stale-frame dropping enabled."
         )
 
         self.get_logger().info(
-            "Waiting for /camera/front/image ..."
+            "Scene-loop timestamp reset enabled."
+        )
+
+        self.get_logger().info(
+            "Waiting for "
+            "/camera/front/image ..."
         )
 
     # ==============================================================
-    # IMAGE CALLBACK
+    # CAMERA CALLBACK
     # ==============================================================
 
-    def image_callback(self, msg):
+    def image_callback(
+        self,
+        msg,
+    ):
+
+        self.received += 1
+
+        # ==========================================================
+        # CONVERT IMAGE
+        # ==========================================================
 
         try:
 
-            frame = self.bridge.imgmsg_to_cv2(
-                msg,
-                desired_encoding="bgr8"
+            frame = (
+                self.bridge.imgmsg_to_cv2(
+                    msg,
+                    desired_encoding="bgr8",
+                )
             )
 
         except Exception as e:
@@ -245,27 +269,147 @@ class RAFTOpticalFlowNode(Node):
             return
 
         # ==========================================================
-        # CURRENT ROS TIMESTAMP
+        # COPY
         # ==========================================================
 
-        current_timestamp = (
-            float(msg.header.stamp.sec)
+        frame = frame.copy()
+
+        # ==========================================================
+        # LATEST FRAME ONLY
+        # ==========================================================
+
+        with self.worker_condition:
+
+            # If a frame is already waiting and has not been
+            # processed, discard it.
+            #
+            # We do NOT want:
+            #
+            # frame 1
+            # frame 2
+            # frame 3
+            # frame 4
+            #
+            # waiting behind a 3-second RAFT inference.
+            #
+            if (
+                self.latest_frame
+                is not None
+            ):
+
+                self.dropped += 1
+
+            self.latest_frame = frame
+
+            self.latest_stamp = (
+                msg.header.stamp
+            )
+
+            self.worker_condition.notify()
+
+    # ==============================================================
+    # WORKER
+    # ==============================================================
+
+    def flow_worker(self):
+
+        self.get_logger().info(
+            "RAFT worker thread started."
+        )
+
+        while self.worker_running:
+
+            # ======================================================
+            # WAIT
+            # ======================================================
+
+            with self.worker_condition:
+
+                while (
+                    self.latest_frame is None
+                    and
+                    self.worker_running
+                ):
+
+                    self.worker_condition.wait(
+                        timeout=0.5
+                    )
+
+                if not self.worker_running:
+
+                    break
+
+                frame = (
+                    self.latest_frame
+                )
+
+                stamp = (
+                    self.latest_stamp
+                )
+
+                # IMPORTANT:
+                #
+                # Remove it from the buffer BEFORE inference.
+                #
+                self.latest_frame = None
+
+            # ======================================================
+            # PROCESS
+            # ======================================================
+
+            try:
+
+                self.process_frame(
+                    frame,
+                    stamp,
+                )
+
+            except Exception as e:
+
+                self.get_logger().error(
+                    "RAFT processing error: "
+                    f"{e}"
+                )
+
+        self.get_logger().info(
+            "RAFT worker thread stopped."
+        )
+
+    # ==============================================================
+    # PROCESS FRAME
+    # ==============================================================
+
+    def process_frame(
+        self,
+        frame,
+        stamp,
+    ):
+
+        # ==========================================================
+        # TIMESTAMP
+        # ==========================================================
+
+        current_time = (
+            stamp.sec
             +
-            float(msg.header.stamp.nanosec)
-            *
-            1e-9
+            stamp.nanosec / 1e9
         )
 
         # ==========================================================
-        # FIRST FRAME
+        # INITIAL FRAME
         # ==========================================================
 
-        if self.prev_frame is None:
+        if (
+            self.previous_frame
+            is None
+        ):
 
-            self.prev_frame = frame.copy()
+            self.previous_frame = (
+                frame
+            )
 
-            self.prev_timestamp = (
-                current_timestamp
+            self.previous_stamp = (
+                current_time
             )
 
             self.get_logger().info(
@@ -280,811 +424,502 @@ class RAFTOpticalFlowNode(Node):
         # ==========================================================
 
         dt = (
-            current_timestamp
+            current_time
             -
-            self.prev_timestamp
+            self.previous_stamp
         )
 
-        self.last_dt = dt
-
         # ==========================================================
-        # CHECK TIMESTAMP
+        # NUSCENES SCENE LOOP
         # ==========================================================
 
+        # When the NuScenes player reaches the end of the scene,
+        # it jumps from the final timestamp back to the first
+        # timestamp.
+        #
+        # Example:
+        #
+        # previous = 153.5s
+        # current  = 137.5s
+        #
+        # dt = -16s
+        #
+        # That is NOT a physical camera motion.
+        #
         if dt <= 0.0:
 
-            self.get_logger().warn(
-                f"Invalid timestamp difference: "
-                f"dt={dt:.6f}s"
-            )
+            self.scene_resets += 1
 
-            self.prev_frame = frame.copy()
-
-            self.prev_timestamp = (
-                current_timestamp
-            )
-
-            return
-
-        # ==========================================================
-        # COMPUTE RAFT FLOW
-        # ==========================================================
-
-        flow, inference_time = (
-            self.compute_flow(
-                self.prev_frame,
+            self.previous_frame = (
                 frame
             )
-        )
 
-        if flow is None:
+            self.previous_stamp = (
+                current_time
+            )
 
-            self.prev_frame = frame.copy()
-
-            self.prev_timestamp = (
-                current_timestamp
+            self.get_logger().warn(
+                "NuScenes scene loop detected. "
+                f"Resetting temporal flow state "
+                f"(dt={dt:.3f}s)."
             )
 
             return
 
         # ==========================================================
-        # FLOW COMPONENTS
+        # EXTREMELY LARGE DT
         # ==========================================================
 
-        dx = flow[:, :, 0]
+        # This should normally not happen after latest-frame
+        # buffering, but protect against it.
+        #
+        if dt > 2.0:
 
-        dy = flow[:, :, 1]
+            self.invalid_dt += 1
 
-        magnitude = np.sqrt(
-            dx * dx
-            +
-            dy * dy
-        )
-
-        # ==========================================================
-        # STATISTICS
-        # ==========================================================
-
-        self.update_statistics(
-            dx,
-            dy,
-            magnitude
-        )
-
-        self.last_inference_time = (
-            inference_time
-        )
-
-        # ==========================================================
-        # VISUALIZATION
-        # ==========================================================
-
-        overlay = (
-            self.create_flow_visualization(
-                frame,
-                flow
-            )
-        )
-
-        magnitude_image = (
-            self.create_magnitude_image(
-                magnitude
-            )
-        )
-
-        dx_image = (
-            self.create_component_image(
-                dx
-            )
-        )
-
-        dy_image = (
-            self.create_component_image(
-                dy
-            )
-        )
-
-        # ==========================================================
-        # PUBLISH
-        # ==========================================================
-
-        self.publish_outputs(
-            overlay,
-            magnitude_image,
-            dx_image,
-            dy_image,
-            msg
-        )
-
-        # ==========================================================
-        # UPDATE PREVIOUS FRAME
-        # ==========================================================
-
-        self.prev_frame = frame.copy()
-
-        self.prev_timestamp = (
-            current_timestamp
-        )
-
-        self.processed_frames += 1
-
-        # ==========================================================
-        # LOG
-        # ==========================================================
-
-        if self.processed_frames % 5 == 0:
-
-            fps = (
-                1.0 / inference_time
-                if inference_time > 0.0
-                else 0.0
+            self.get_logger().warn(
+                "Large timestamp gap detected: "
+                f"dt={dt:.3f}s. "
+                "Resetting flow state."
             )
 
-            high_flow_percentage = (
-                100.0
-                *
-                np.mean(
-                    magnitude
-                    >
-                    self.SANITY_FLOW_THRESHOLD
-                )
+            self.previous_frame = (
+                frame
             )
 
-            self.get_logger().info(
-                "RAFT flow | "
-                f"processed={self.processed_frames} | "
-                f"dt={dt:.3f}s | "
-                f"inference={inference_time:.2f}s | "
-                f"FPS={fps:.2f} | "
-                f"mean={self.last_mean:.2f}px | "
-                f"median={self.last_median:.2f}px | "
-                f"P90={self.last_p90:.2f}px | "
-                f"P95={self.last_p95:.2f}px | "
-                f"P99={self.last_p99:.2f}px | "
-                f"max={self.last_max:.2f}px | "
-                f">200px={high_flow_percentage:.1f}%"
+            self.previous_stamp = (
+                current_time
             )
 
-    # ==============================================================
-    # COMPUTE RAFT FLOW
-    # ==============================================================
-
-    def compute_flow(
-        self,
-        previous_frame,
-        current_frame
-    ):
+            return
 
         # ==========================================================
-        # RESIZE BOTH FRAMES
+        # PREVIOUS / CURRENT
         # ==========================================================
 
-        previous_resized = cv2.resize(
-            previous_frame,
+        prev = (
+            self.previous_frame
+        )
+
+        curr = frame
+
+        # ==========================================================
+        # UPDATE STATE
+        # ==========================================================
+
+        self.previous_frame = (
+            frame
+        )
+
+        self.previous_stamp = (
+            current_time
+        )
+
+        # ==========================================================
+        # RESIZE
+        # ==========================================================
+
+        prev_small = cv2.resize(
+            prev,
             (
                 self.INPUT_WIDTH,
-                self.INPUT_HEIGHT
+                self.INPUT_HEIGHT,
             ),
-            interpolation=cv2.INTER_AREA
+            interpolation=cv2.INTER_AREA,
         )
 
-        current_resized = cv2.resize(
-            current_frame,
+        curr_small = cv2.resize(
+            curr,
             (
                 self.INPUT_WIDTH,
-                self.INPUT_HEIGHT
+                self.INPUT_HEIGHT,
             ),
-            interpolation=cv2.INTER_AREA
+            interpolation=cv2.INTER_AREA,
         )
 
         # ==========================================================
         # BGR → RGB
         # ==========================================================
 
-        previous_rgb = cv2.cvtColor(
-            previous_resized,
-            cv2.COLOR_BGR2RGB
+        prev_rgb = cv2.cvtColor(
+            prev_small,
+            cv2.COLOR_BGR2RGB,
         )
 
-        current_rgb = cv2.cvtColor(
-            current_resized,
-            cv2.COLOR_BGR2RGB
+        curr_rgb = cv2.cvtColor(
+            curr_small,
+            cv2.COLOR_BGR2RGB,
         )
 
         # ==========================================================
         # NUMPY → TORCH
         # ==========================================================
 
-        previous_tensor = (
+        prev_tensor = (
             torch.from_numpy(
-                previous_rgb
+                prev_rgb
             )
             .permute(
                 2,
                 0,
-                1
+                1,
             )
             .float()
-            .unsqueeze(0)
+            / 255.0
         )
 
-        current_tensor = (
+        curr_tensor = (
             torch.from_numpy(
-                current_rgb
+                curr_rgb
             )
             .permute(
                 2,
                 0,
-                1
+                1,
             )
             .float()
+            / 255.0
+        )
+
+        # ==========================================================
+        # BATCH
+        # ==========================================================
+
+        prev_tensor = (
+            prev_tensor
             .unsqueeze(0)
+            .to(self.device)
+        )
+
+        curr_tensor = (
+            curr_tensor
+            .unsqueeze(0)
+            .to(self.device)
         )
 
         # ==========================================================
-        # TORCHVISION RAFT TRANSFORM
+        # RAFT INFERENCE
         # ==========================================================
 
-        (
-            previous_tensor,
-            current_tensor
-        ) = self.transforms(
-            previous_tensor,
-            current_tensor
+        inference_start = (
+            time.perf_counter()
         )
-
-        previous_tensor = (
-            previous_tensor.to(
-                self.device
-            )
-        )
-
-        current_tensor = (
-            current_tensor.to(
-                self.device
-            )
-        )
-
-        # ==========================================================
-        # INFERENCE
-        # ==========================================================
-
-        start = time.perf_counter()
 
         with torch.inference_mode():
 
-            predictions = self.model(
-                previous_tensor,
-                current_tensor
+            flow_predictions = (
+                self.model(
+                    prev_tensor,
+                    curr_tensor,
+                )
             )
-
-        end = time.perf_counter()
 
         inference_time = (
-            end - start
+            time.perf_counter()
+            -
+            inference_start
         )
 
         # ==========================================================
-        # FINAL FLOW PREDICTION
+        # FINAL FLOW
         # ==========================================================
-
-        flow_tensor = predictions[-1]
-
-        # Shape:
-        #
-        # [1, 2, H, W]
-        #
-        # H = 360
-        # W = 640
 
         flow = (
-            flow_tensor[0]
-            .permute(
-                1,
-                2,
-                0
-            )
+            flow_predictions[-1]
+            .detach()
             .cpu()
             .numpy()
-            .astype(
-                np.float32
+            [0]
+            .transpose(
+                1,
+                2,
+                0,
             )
         )
 
         # ==========================================================
-        # IMPORTANT
-        #
-        # DO NOT RESIZE OR SCALE THE FLOW.
-        #
-        # The returned flow remains in the RAFT working
-        # coordinate system:
-        #
-        # 640 x 360
-        #
-        # This makes the measurements internally consistent.
+        # FLOW COMPONENTS
         # ==========================================================
 
-        return (
-            flow,
-            inference_time
+        flow_x = flow[:, :, 0]
+
+        flow_y = flow[:, :, 1]
+
+        magnitude = np.sqrt(
+            flow_x ** 2
+            +
+            flow_y ** 2
         )
 
-    # ==============================================================
-    # STATISTICS
-    # ==============================================================
+        # ==========================================================
+        # ROBUST STATISTICS
+        # ==========================================================
 
-    def update_statistics(
-        self,
-        dx,
-        dy,
-        magnitude
-    ):
-
-        finite_mask = (
-            np.isfinite(dx)
-            &
-            np.isfinite(dy)
-            &
-            np.isfinite(magnitude)
+        valid = np.isfinite(
+            magnitude
         )
 
-        values = (
-            magnitude[
-                finite_mask
-            ]
+        valid_magnitude = (
+            magnitude[valid]
         )
 
-        dx_values = (
-            dx[
-                finite_mask
-            ]
-        )
-
-        dy_values = (
-            dy[
-                finite_mask
-            ]
-        )
-
-        if len(values) == 0:
+        if (
+            valid_magnitude.size
+            == 0
+        ):
 
             return
 
-        self.last_mean = float(
-            np.mean(values)
+        # Remove pathological values
+        # from statistics.
+
+        valid_magnitude = (
+            valid_magnitude[
+                valid_magnitude
+                <
+                self.MAX_FLOW
+            ]
         )
 
-        self.last_median = float(
-            np.median(values)
-        )
+        if (
+            valid_magnitude.size
+            == 0
+        ):
 
-        self.last_p75 = float(
-            np.percentile(
-                values,
-                75
+            return
+
+        mean_flow = float(
+            np.mean(
+                valid_magnitude
             )
         )
 
-        self.last_p90 = float(
-            np.percentile(
-                values,
-                90
+        median_flow = float(
+            np.median(
+                valid_magnitude
             )
         )
 
-        self.last_p95 = float(
+        p90 = float(
             np.percentile(
-                values,
-                95
+                valid_magnitude,
+                90,
             )
         )
 
-        self.last_p99 = float(
+        p95 = float(
             np.percentile(
-                values,
-                99
+                valid_magnitude,
+                95,
             )
         )
 
-        self.last_max = float(
-            np.max(values)
+        p99 = float(
+            np.percentile(
+                valid_magnitude,
+                99,
+            )
         )
 
-        self.last_mean_dx = float(
-            np.mean(dx_values)
+        max_flow = float(
+            np.max(
+                valid_magnitude
+            )
         )
 
-        self.last_mean_dy = float(
-            np.mean(dy_values)
+        over_200 = float(
+            np.mean(
+                valid_magnitude
+                >
+                200.0
+            )
+            * 100.0
         )
+
+        # ==========================================================
+        # PUBLISH VISUALIZATION
+        # ==========================================================
+
+        self.publish_flow_visualization(
+            flow,
+            magnitude,
+            stamp,
+        )
+
+        self.processed += 1
+
+        fps = (
+            1.0
+            /
+            inference_time
+            if inference_time > 0
+            else 0.0
+        )
+
+        # ==========================================================
+        # LOG
+        # ==========================================================
+
+        if self.processed % 5 == 0:
+
+            self.get_logger().info(
+                "RAFT flow | "
+                f"processed={self.processed} | "
+                f"received={self.received} | "
+                f"dropped={self.dropped} | "
+                f"dt={dt:.3f}s | "
+                f"inference={inference_time:.2f}s | "
+                f"FPS={fps:.2f} | "
+                f"mean={mean_flow:.2f}px | "
+                f"median={median_flow:.2f}px | "
+                f"P90={p90:.2f}px | "
+                f"P95={p95:.2f}px | "
+                f"P99={p99:.2f}px | "
+                f"max={max_flow:.2f}px | "
+                f">200px={over_200:.1f}%"
+            )
 
     # ==============================================================
-    # FLOW VISUALIZATION
+    # VISUALIZATION
     # ==============================================================
 
-    def create_flow_visualization(
+    def publish_flow_visualization(
         self,
-        frame,
-        flow
+        flow,
+        magnitude,
+        stamp,
     ):
-
-        # ----------------------------------------------------------
-        # Work entirely at RAFT resolution
-        # ----------------------------------------------------------
-
-        small = cv2.resize(
-            frame,
-            (
-                self.INPUT_WIDTH,
-                self.INPUT_HEIGHT
-            ),
-            interpolation=cv2.INTER_AREA
-        )
-
-        dx = flow[:, :, 0]
-
-        dy = flow[:, :, 1]
-
-        magnitude = np.sqrt(
-            dx * dx
-            +
-            dy * dy
-        )
-
-        angle = np.arctan2(
-            dy,
-            dx
-        )
 
         # ==========================================================
         # HSV FLOW VISUALIZATION
         # ==========================================================
 
+        flow_x = flow[:, :, 0]
+
+        flow_y = flow[:, :, 1]
+
+        angle = np.arctan2(
+            flow_y,
+            flow_x,
+        )
+
+        angle = (
+            angle + np.pi
+        ) / (
+            2.0 * np.pi
+        )
+
+        mag_vis = np.clip(
+            magnitude / 100.0,
+            0.0,
+            1.0,
+        )
+
         hsv = np.zeros(
             (
                 self.INPUT_HEIGHT,
                 self.INPUT_WIDTH,
-                3
+                3,
             ),
-            dtype=np.uint8
-        )
-
-        # Direction → Hue
-
-        hue = (
-            (
-                angle
-                +
-                np.pi
-            )
-            *
-            90.0
-            /
-            np.pi
+            dtype=np.uint8,
         )
 
         hsv[:, :, 0] = (
-            np.mod(
-                hue,
-                180
-            )
-            .astype(
-                np.uint8
-            )
+            angle * 179.0
+        ).astype(
+            np.uint8
         )
-
-        # Saturation
 
         hsv[:, :, 1] = 255
 
-        # Magnitude → Value
-
-        magnitude_clipped = np.clip(
-            magnitude,
-            0.0,
-            self.MAX_VIS_MAGNITUDE
-        )
-
         hsv[:, :, 2] = (
-            magnitude_clipped
-            /
-            self.MAX_VIS_MAGNITUDE
-            *
-            255.0
+            mag_vis * 255.0
         ).astype(
             np.uint8
         )
 
-        flow_color = cv2.cvtColor(
+        flow_bgr = cv2.cvtColor(
             hsv,
-            cv2.COLOR_HSV2BGR
+            cv2.COLOR_HSV2BGR,
         )
 
         # ==========================================================
-        # BLEND
+        # MAGNITUDE IMAGE
         # ==========================================================
 
-        overlay = cv2.addWeighted(
-            small,
-            0.50,
-            flow_color,
-            0.50,
-            0
+        magnitude_vis = np.clip(
+            magnitude / 100.0
+            * 255.0,
+            0,
+            255,
+        ).astype(
+            np.uint8
         )
 
         # ==========================================================
-        # DRAW FLOW ARROWS
+        # MESSAGE
         # ==========================================================
 
-        for y in range(
-            self.ARROW_STEP // 2,
-            self.INPUT_HEIGHT,
-            self.ARROW_STEP
+        flow_msg = (
+            self.bridge.cv2_to_imgmsg(
+                flow_bgr,
+                encoding="bgr8",
+            )
+        )
+
+        flow_msg.header.stamp = (
+            stamp
+        )
+
+        flow_msg.header.frame_id = (
+            "camera_front"
+        )
+
+        magnitude_msg = (
+            self.bridge.cv2_to_imgmsg(
+                magnitude_vis,
+                encoding="mono8",
+            )
+        )
+
+        magnitude_msg.header.stamp = (
+            stamp
+        )
+
+        magnitude_msg.header.frame_id = (
+            "camera_front"
+        )
+
+        # ==========================================================
+        # PUBLISH
+        # ==========================================================
+
+        self.flow_overlay_pub.publish(
+            flow_msg
+        )
+
+        self.flow_magnitude_pub.publish(
+            magnitude_msg
+        )
+
+    # ==============================================================
+    # SHUTDOWN
+    # ==============================================================
+
+    def stop_worker(self):
+
+        with self.worker_condition:
+
+            self.worker_running = False
+
+            self.worker_condition.notify_all()
+
+        if (
+            self.worker_thread.is_alive()
         ):
 
-            for x in range(
-                self.ARROW_STEP // 2,
-                self.INPUT_WIDTH,
-                self.ARROW_STEP
-            ):
-
-                fx = float(
-                    dx[y, x]
-                )
-
-                fy = float(
-                    dy[y, x]
-                )
-
-                mag = float(
-                    magnitude[y, x]
-                )
-
-                if (
-                    not np.isfinite(mag)
-                    or
-                    mag < self.ARROW_MIN_MAGNITUDE
-                ):
-
-                    continue
-
-                end_x = int(
-                    np.clip(
-                        x + fx,
-                        0,
-                        self.INPUT_WIDTH - 1
-                    )
-                )
-
-                end_y = int(
-                    np.clip(
-                        y + fy,
-                        0,
-                        self.INPUT_HEIGHT - 1
-                    )
-                )
-
-                cv2.arrowedLine(
-                    overlay,
-                    (x, y),
-                    (end_x, end_y),
-                    (0, 255, 0),
-                    1,
-                    tipLength=0.25
-                )
-
-        # ==========================================================
-        # TEXT
-        # ==========================================================
-
-        cv2.putText(
-            overlay,
-            "RAFT-Small Dense Optical Flow",
-            (15, 25),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.55,
-            (0, 255, 255),
-            2
-        )
-
-        cv2.putText(
-            overlay,
-            (
-                f"dt={self.last_dt:.3f}s"
-            ),
-            (15, 50),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.48,
-            (255, 255, 255),
-            1
-        )
-
-        cv2.putText(
-            overlay,
-            (
-                f"inference="
-                f"{self.last_inference_time:.2f}s"
-            ),
-            (15, 72),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.48,
-            (255, 255, 255),
-            1
-        )
-
-        cv2.putText(
-            overlay,
-            (
-                f"median="
-                f"{self.last_median:.1f}px"
-            ),
-            (15, 94),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.48,
-            (255, 255, 255),
-            1
-        )
-
-        cv2.putText(
-            overlay,
-            (
-                f"P95="
-                f"{self.last_p95:.1f}px"
-            ),
-            (15, 116),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.48,
-            (255, 255, 255),
-            1
-        )
-
-        return overlay
-
-    # ==============================================================
-    # MAGNITUDE IMAGE
-    # ==============================================================
-
-    def create_magnitude_image(
-        self,
-        magnitude
-    ):
-
-        magnitude_clipped = np.clip(
-            magnitude,
-            0.0,
-            self.MAX_VIS_MAGNITUDE
-        )
-
-        normalized = (
-            magnitude_clipped
-            /
-            self.MAX_VIS_MAGNITUDE
-            *
-            255.0
-        ).astype(
-            np.uint8
-        )
-
-        return cv2.applyColorMap(
-            normalized,
-            cv2.COLORMAP_JET
-        )
-
-    # ==============================================================
-    # COMPONENT IMAGE
-    # ==============================================================
-
-    def create_component_image(
-        self,
-        component
-    ):
-
-        # Symmetric range for visualization.
-
-        component_clipped = np.clip(
-            component,
-            -50.0,
-            50.0
-        )
-
-        normalized = (
-            (
-                component_clipped
-                +
-                50.0
-            )
-            /
-            100.0
-            *
-            255.0
-        ).astype(
-            np.uint8
-        )
-
-        return cv2.applyColorMap(
-            normalized,
-            cv2.COLORMAP_JET
-        )
-
-    # ==============================================================
-    # PUBLISH
-    # ==============================================================
-
-    def publish_outputs(
-        self,
-        overlay,
-        magnitude,
-        dx_image,
-        dy_image,
-        msg
-    ):
-
-        try:
-
-            overlay_msg = (
-                self.bridge.cv2_to_imgmsg(
-                    overlay,
-                    encoding="bgr8"
-                )
-            )
-
-            overlay_msg.header = (
-                msg.header
-            )
-
-            self.overlay_pub.publish(
-                overlay_msg
-            )
-
-            magnitude_msg = (
-                self.bridge.cv2_to_imgmsg(
-                    magnitude,
-                    encoding="bgr8"
-                )
-            )
-
-            magnitude_msg.header = (
-                msg.header
-            )
-
-            self.magnitude_pub.publish(
-                magnitude_msg
-            )
-
-            dx_msg = (
-                self.bridge.cv2_to_imgmsg(
-                    dx_image,
-                    encoding="bgr8"
-                )
-            )
-
-            dx_msg.header = (
-                msg.header
-            )
-
-            self.dx_pub.publish(
-                dx_msg
-            )
-
-            dy_msg = (
-                self.bridge.cv2_to_imgmsg(
-                    dy_image,
-                    encoding="bgr8"
-                )
-            )
-
-            dy_msg.header = (
-                msg.header
-            )
-
-            self.dy_pub.publish(
-                dy_msg
-            )
-
-        except Exception as e:
-
-            self.get_logger().error(
-                f"Failed to publish flow: {e}"
+            self.worker_thread.join(
+                timeout=2.0
             )
 
 
@@ -1111,6 +946,8 @@ def main(args=None):
         pass
 
     finally:
+
+        node.stop_worker()
 
         node.destroy_node()
 
