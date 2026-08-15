@@ -6,6 +6,106 @@ The project is designed as an experimental **autonomous driving perception stack
 
 The long-term objective is to evolve the stack from raw sensors to downstream planning/control:
 
+---
+
+# Demo
+
+The system is evaluated on the nuScenes Mini dataset through a ROS 2
+pipeline with RViz2 visualization.
+
+## Full Perception Pipeline
+
+![ADAS Perception Pipeline](assets/gifs/adas_pipeline.gif)
+
+The demo shows the ROS 2 perception stack operating on a looping nuScenes
+scene, including camera perception, road segmentation, lane detection,
+LiDAR perception, tracking, and RViz visualization.
+
+---
+
+## Camera Perception
+
+### Semantic Segmentation
+
+![Semantic Segmentation](assets/images/semantic_segmentation.png)
+
+Semantic segmentation provides the pixel-level scene representation used
+by downstream road and lane perception.
+
+### Road Segmentation
+
+![Road Segmentation](assets/images/road_segmentation.png)
+
+The semantic segmentation output is converted into a binary road mask:
+
+- White: road
+- Black: non-road
+
+The road mask is subsequently used as a spatial constraint for lane detection.
+
+### Lane Detection
+
+![Lane Detection](assets/images/lane_detection.png)
+
+The lane detection module extracts left and right lane markings and applies
+temporal filtering and lane-pair geometry consistency.
+
+
+---
+
+## Optical Flow
+
+### Classical Optical Flow
+
+![Lucas-Kanade Optical Flow](assets/gifs/lucas_kanade_flow.gif)
+
+Classical sparse optical flow uses Shi-Tomasi feature detection followed by
+pyramidal Lucas-Kanade tracking.
+
+### RAFT-Small
+
+![RAFT Optical Flow](assets/gifs/raft_optical_flow.gif)
+
+RAFT-Small provides a learned dense optical-flow representation.
+
+The current implementation runs on CPU at 640x360 and is intended primarily
+as a learned baseline for comparison with the classical Lucas-Kanade approach.
+
+---
+
+## LiDAR Perception
+
+### LiDAR Point Cloud
+
+![LiDAR Point Cloud](assets/images/lidar_pointcloud.png)
+
+The nuScenes LiDAR stream is published through ROS 2 and visualized in RViz2.
+
+### Ground-Truth 3D Objects
+
+![Ground Truth](assets/images/ground_truth_boxes.png)
+
+Ground-truth 3D bounding boxes from nuScenes are visualized in green.
+
+### Object Detection and Tracking
+
+![Object Tracking](assets/gifs/object_tracking.gif)
+
+The tracking pipeline maintains persistent object identities and estimates
+object motion from sequential detections.
+
+---
+
+## RViz2 System Visualization
+
+![RViz2 ADAS Visualization](assets/gifs/rviz_full_stack.gif)
+
+RViz2 provides visualization of the sensor streams, ground truth,
+detections, tracks, lane perception, and other intermediate outputs.
+
+---
+
+
 ```mermaid
 flowchart TD
     A["Raw Sensors"] --> B["Camera"]
